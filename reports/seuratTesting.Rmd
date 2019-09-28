@@ -1,0 +1,63 @@
+---
+title: "Seurat implementation"
+author: "Carlos Ramirez Alvarez"
+date: "9/18/2019"
+output: html_document
+---
+
+## 10X input
+
+The following files are the input of Seurat 10x function.
+
+```{r}
+dataPath <- '../data/pbmc3k/filtered_gene_bc_matrices/hg19/'
+files <- list.files(dataPath)
+files
+```
+
+* Inspecting **barcodes.tsv** file.
+
+```{r}
+fPath <- paste(dataPath, files[1], sep = '')
+read.table(fPath, nrows = 5)
+```
+
+barcodes file has 2,700 lines.
+
+```{r}
+command <- paste0('wc -l ', fPath)
+system(command)
+```
+
+* Display **genes.tsv** file content.
+
+```{r}
+fPath <- paste(dataPath, files[2], sep = '')
+read.table(fPath, nrows = 5)
+```
+
+```{r}
+command <- paste0('wc -l ', fPath)
+system(command)
+```
+
+Show **matrix.mtx** file head content.
+
+```{r}
+fPath <- paste(dataPath, files[3], sep = '')
+substr(readLines(fPath, n = 5),
+       start = 1, stop = 50)
+```
+
+These files are the output of the [cellRanger](https://support.10xgenomics.com/single-cell-gene-expression/software/pipelines/latest/what-is-cell-ranger) pipeline developed by 10X Genomics. See Feature [Barcode Matrix](https://support.10xgenomics.com/single-cell-gene-expression/software/pipelines/latest/output/matrices) documentations for the description of these files.
+
+## Loading data into Seurat
+
+
+```{r warning=FALSE, message=FALSE}
+library(Seurat)
+
+pbmc <- Read10X(data.dir = '../data/pbmc3k/filtered_gene_bc_matrices/hg19/')
+str(pbmc)
+```
+
