@@ -3,13 +3,16 @@
 ## Dependencies
 library(Seurat)
 
-
 #############################################################################################
 
 ## Loading data into R
 
+#########################################################################################
+## Adult brain cells
+
 ## Loading Adult brain cortex mRNA quantified transcripts
 cDNADir <- '../data/chenS2019sameCellsData/GSE126074_AdBrainCortex_SNAREseq_cDNA/'
+list.files(cDNADir)
 adBrcDNA <- Read10X(data.dir = cDNADir, 
                     gene.column = 1      ## necessary parameter, otherwise runs error
                     )
@@ -18,7 +21,6 @@ adBrcDNA.Seu <- CreateSeuratObject(counts = adBrcDNA,
                                    min.cells = 10,
                                    min.features = 500)
 
-list.files(cDNADir)
 
 ## Loading Adult brain cortex chromatin accesibility reads
 chrDir <- '../data/chenS2019sameCellsData/GSE126074_AdBrainCortex_SNAREseq_chromatin/'
@@ -30,35 +32,46 @@ adBrchr.Seu <- CreateSeuratObject(counts = adBrcDNA,
                                    min.cells = 10,
                                    min.features = 500)
 
-pattern <- 'GSE126074_AdBrainCortex_SNAREseq_cDNA' 
-data.dir <- '../data/chenS2019sameCellsData/'
-files <- grep(pattern, list.files(data.dir), value = TRUE)
-barcFileName <- grep('barcode', files, value = TRUE)
-featFileName <- grep('feature|gene|peak', files, value = TRUE)
-matrFilename <- grep('mtx', files, value = TRUE)
-filNames <- c(barcFileName, featFileName, matrFilename)
-filNames <- paste0(data.dir, filNames)
-names(filNames) <- c('barcodes', 'features', 'matrix')
-adBrcDNA <- Read10X(data.dir = filNames, 
-                    gene.column = 1      ## necessary parameter, otherwise runs error
-)
-
-Read10XbyPattern <- function(pattern, ...){
-        
-}
-
-p0BrcDNAdir <- '../data/chenS2019sameCellsData/'
-list.files(p0BrcDNAdir)
 
 ###########################################################################################
+## Embryonic cells 
+## GSE126074_P0_BrainCortex
+cDNADir <- '../data/chenS2019sameCellsData/GSE126074_P0_BrainCortex_SNAREseq_cDNA/'
+list.files(cDNADir)
+p0cDNA <- Read10X(data.dir = cDNADir, 
+                            gene.column = 1      ## necessary parameter, otherwise runs error
+        )
+p0cDNA.Seu <- CreateSeuratObject(counts = p0cDNA,
+                                 project = 'sameCellsData', 
+                                 min.cells = 10,
+                                 min.features = 500)
 
-adBrcDNA.Seu[['percent.mt']] <- PercentageFeatureSet(adBrcDNA.Seu, pattern = '^MT-')
-VlnPlot(adBrcDNA.Seu, 
-        features = c('nFeature_RNA', 
-                     'nCount_RNA'),
-        ncol = 1)
 
+##############################################################################################
+## Cells Mixture cDNA
+mixcDNA <- read.table('../data/chenS2019sameCellsData/GSE126074_CellLineMixture_SNAREseq_cDNA_counts.tsv',
+                      sep = '\t',
+                      stringsAsFactors = FALSE) 
+mixcDNA.seu <- CreateSeuratObject(counts = mixcDNA, 
+                                  assay = 'mixCDNA')
 
+##############################################################################################
 
+## Cells Mixture chromatin
+mixchr <- read.table('../data/chenS2019sameCellsData/GSE126074_CellLineMixture_SNAREseq_chromatin_counts.tsv',
+                      sep = '\t',
+                      stringsAsFactors = FALSE) 
+mixchr.Seu <- CreateSeuratObject(counts = mixchr,
+                                 assay = 'mixChr')
 
+######################################################################################################################
+#####################################################################################################################
+
+## Preprocessing
+mixchr.Seu <- NormalizeData(mixchr.Seu)
+mixchr.Seu <- FindVariableFeatures(mixchr.Seu, 
+                                   selection.method = 'vst',
+                                   nfeatures = 30)
+mixchr.anchors <- FindIntegrationAnchors(object.list = list(mixchr.Seu),
+                                         dims = 1:3)
 
