@@ -1,0 +1,101 @@
+---
+title: "SNARE-seq Data Integration"
+author: "Health Data Science Unit"
+date: "10/29/2019"
+output: 
+  html_document:
+     code_folding: "hide"
+---
+
+Here, we present a pipeline for integration and analysis of the data on SNARE-seq from 
+[Chen S et al, 2019](http://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE126074) of 
+neonatal and adult mouse cerebral cortices. SNARE-seq allows to jointly quantifiy gene 
+expression along with chromatin accesibility in the same cells.  
+
+### Analysis strategy
+
+* Integration of adult and neonatal mRNA-seq data.
+
+* Projection of the integrated set of chromosome accesibility data (adults/integrated?).
+
+
+## Loading the data into R
+
+Data is available in the form of cellRanger 10x Chromium output and can be imported
+in a straightforward manner. Display the **code** tab for details.
+
+```{r warning=FALSE, message=FALSE}
+## Dependencies
+library(Seurat)
+library(dplyr)
+library(ggplot2)
+
+#############################################################################################
+
+## Loading data into R
+
+#########################################################################################
+## Adult brain cells
+
+## Loading Adult brain cortex mRNA quantified transcripts
+cDNADir <- '../data/chenS2019sameCellsData/GSE126074_AdBrainCortex_SNAREseq_cDNA/'
+adBrcDNA <- Read10X(data.dir = cDNADir, 
+                    gene.column = 1      ## necessary parameter, otherwise runs error
+                    )
+adBrcDNA.Seu <- CreateSeuratObject(counts = adBrcDNA,
+                                   project = 'sameCellsData', 
+                                   min.cells = 10,
+                                   min.features = 500)
+
+## Embryonic cells 
+## GSE126074_P0_BrainCortex mRNA
+cDNADir <- '../data/chenS2019sameCellsData/GSE126074_P0_BrainCortex_SNAREseq_cDNA/'
+p0cDNA <- Read10X(data.dir = cDNADir, 
+                            gene.column = 1      ## necessary parameter, otherwise runs error
+        )
+p0cDNA.Seu <- CreateSeuratObject(counts = p0cDNA,
+                                 project = 'sameCellsData', 
+                                 min.cells = 10,
+                                 min.features = 500)
+
+## Loading Adult brain cortex chromatin accesibility reads
+chrDir <- '../data/chenS2019sameCellsData/GSE126074_AdBrainCortex_SNAREseq_chromatin/'
+adBrchr <- Read10X(data.dir = chrDir, 
+                    gene.column = 1      ## necessary parameter, otherwise runs error
+                    )
+adBrchr.Seu <- CreateSeuratObject(counts = adBrcDNA,
+                                   project = 'sameCellsData', 
+                                   min.cells = 10,
+                                   min.features = 500)
+
+## Loading Adult brain cortex chromatin accesibility reads
+chrDir <- '../data/chenS2019sameCellsData/GSE126074_AdBrainCortex_SNAREseq_chromatin/'
+adBrchr <- Read10X(data.dir = chrDir, 
+                    gene.column = 1      ## necessary parameter, otherwise runs error
+                    )
+adBrchr.Seu <- CreateSeuratObject(counts = adBrcDNA,
+                                   project = 'sameCellsData', 
+                                   min.cells = 10,
+                                   min.features = 500)
+```
+
+## Data pre processing
+
+* Normalization
+
+* Features selection
+
+```{r message=FALSE, warning=FALSE}
+## Preprocessing
+neurones <- list(adBrcDNA.Seu, p0cDNA.Seu)
+names(neurones) <- c('adBrcDNA', 'p0cDNA')
+for (i in 1:length(neurones)){
+        neurones[[i]] <- NormalizeData(neurones[[i]])
+        neurones[[i]] <- FindVariableFeatures(neurones[[i]], 
+                                              selection.method = 'vst',
+                                              nfeatures = 2000)
+}
+```
+
+
+
