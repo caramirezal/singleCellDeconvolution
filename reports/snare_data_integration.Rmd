@@ -14,17 +14,18 @@ expression along with chromatin accesibility in the same cells.
 
 ### Analysis strategy
 
-* Integration of adult and neonatal mRNA-seq data.
+* 1. Integration of adult and neonatal mRNA-seq data.
 
-* Projection of the integrated set of chromosome accesibility data (adults/integrated?).
+* 2. Projection of the integrated set of chromosome accesibility data (adults/integrated?).
 
+* 3. Cross validation of the predicted against barcodes IDs cell identities. 
 
 ## Loading the data into R
 
 Data is available in the form of cellRanger 10x Chromium output and can be imported
 in a straightforward manner. Display the **code** tab for details.
 
-```{r warning=FALSE, message=FALSE}
+```{r warning=FALSE, message=FALSE, cache=TRUE}
 ## Dependencies
 library(Seurat)
 library(dplyr)
@@ -63,39 +64,68 @@ chrDir <- '../data/chenS2019sameCellsData/GSE126074_AdBrainCortex_SNAREseq_chrom
 adBrchr <- Read10X(data.dir = chrDir, 
                     gene.column = 1      ## necessary parameter, otherwise runs error
                     )
-adBrchr.Seu <- CreateSeuratObject(counts = adBrcDNA,
+adBrchr.Seu <- CreateSeuratObject(counts = adBrchr,
                                    project = 'sameCellsData', 
                                    min.cells = 10,
                                    min.features = 500)
 
 ## Loading Adult brain cortex chromatin accesibility reads
-chrDir <- '../data/chenS2019sameCellsData/GSE126074_AdBrainCortex_SNAREseq_chromatin/'
-adBrchr <- Read10X(data.dir = chrDir, 
+p0chrDir <- '../data/chenS2019sameCellsData/GSE126074_P0_BrainCortex_SNAREseq_chromatin/'
+p0Brchr <- Read10X(data.dir = p0chrDir, 
                     gene.column = 1      ## necessary parameter, otherwise runs error
                     )
-adBrchr.Seu <- CreateSeuratObject(counts = adBrcDNA,
+p0Brchr.Seu <- CreateSeuratObject(counts = p0Brchr,
                                    project = 'sameCellsData', 
                                    min.cells = 10,
                                    min.features = 500)
+
+Idents(adBrcDNA.Seu) <- rep('ad_mRNA', nrow(adBrcDNA.Seu))
+Idents(p0cDNA.Seu) <- rep('p0_mRNA', nrow(p0cDNA.Seu))
 ```
 
 ## Data pre processing
 
-* Normalization
+Preprocessing comprises the following steps:
 
-* Features selection
+* 1. Normalization
 
-```{r message=FALSE, warning=FALSE}
+* 2. Features selection
+
+```{r message=FALSE, warning=FALSE, cache=TRUE}
 ## Preprocessing
-neurones <- list(adBrcDNA.Seu, p0cDNA.Seu)
-names(neurones) <- c('adBrcDNA', 'p0cDNA')
-for (i in 1:length(neurones)){
-        neurones[[i]] <- NormalizeData(neurones[[i]])
-        neurones[[i]] <- FindVariableFeatures(neurones[[i]], 
+brain <- list(adBrcDNA.Seu, p0cDNA.Seu)
+names(brain) <- c('ad_mRNA', 'p0_mRNA')
+for (i in 1:length(brain)){
+        brain[[i]] <- NormalizeData(brain[[i]])
+        brain[[i]] <- FindVariableFeatures(brain[[i]], 
                                               selection.method = 'vst',
                                               nfeatures = 2000)
 }
 ```
 
+## Data integration
+
+Next, we integrate data on gene expression for adult and neonatal brain cells. From the next figure it can be seen UMAP 
+projection of integrated data sets. Notice, that the different assay groups are clustered together. 
+
+```{r cache=TRUE, warning=FALSE, message=FALSE, fig.cap='Data integration of gene expression in adult and neonatal brain cells single cell data.'}
+## data integration
+brain.anchors <- FindIntegrationAnchors(object.list = brain, 
+                                           dims = 1:30)
+brain.integrated <- IntegrateData(anchorset = brain.anchors,
+                                     dims = 1:30)
+
+
+# Visualisation of the integrated data
+DefaultAssay(brain.integrated) <- "integrated"
+brain.integrated <- ScaleData(brain.integrated, verbose = FALSE)
+brain.integrated <- RunPCA(brain.integrated, npcs = 30, verbose = FALSE)
+brain.integrated <- RunUMAP(brain.integrated, reduction = "pca", dims = 1:30)
+DimPlot(brain.integrated, reduction = "umap", group.by = "ident")
+```
+
+```{r}
+FeaturePlot(brain.integrated, features = c('Foxp1'))
+```
 
 
