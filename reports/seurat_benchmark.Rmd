@@ -1,0 +1,96 @@
+---
+title: "Seurat benchmark"
+author: "Health Data Science Unit"
+date: "10/31/2019"
+output: 
+   html_document:
+           code_folding: 'hide'
+---
+
+
+```{r echo=FALSE}
+## set defaults settings for chunks
+knitr::opts_chunk$set(cache=TRUE, 
+                      message=FALSE, 
+                      warning=FALSE)
+```
+
+Our goal is to test the performance of Seurat information transfer by using single cells
+data from SNARE sequencing that allows to quantify cDNA along with chromatin accesibility
+reads in the same cells.
+
+## Data
+
+The following cell lines were profiled:
+
+* BJ
+
+* H1
+
+* K562
+
+* GM12878
+
+
+## Analysis strategy
+
+* Clustering of cells to identify the cell subtypes described above.
+
+* Validation of the clustering analysis using known markers.
+
+* Projection of the labels from gene expression to chromatin accesibility data.
+
+* Cross validation using the known cells ids.
+
+
+```{r}
+library(Seurat)
+
+##############################################################################################
+## Cells Mixture cDNA
+mixcDNA <- read.table('../data/chenS2019sameCellsData/GSE126074_CellLineMixture_SNAREseq_cDNA_counts.tsv',
+                      sep = '\t',
+                      stringsAsFactors = FALSE) 
+mixcDNA.seu <- CreateSeuratObject(counts = mixcDNA, 
+                                  assay = 'mixCDNA')
+
+##############################################################################################
+
+## Cells Mixture chromatin
+mixchr <- read.table('../data/chenS2019sameCellsData/GSE126074_CellLineMixture_SNAREseq_chromatin_counts.tsv',
+                      sep = '\t',
+                      stringsAsFactors = FALSE) 
+mixchr.Seu <- CreateSeuratObject(counts = mixchr,
+                                 assay = 'mixChr')
+
+```
+
+## Clustering mixture cells
+
+First, the cells are clasified using KNN graph clustering in order to obtain cell subtypes which
+are going to be projected into chromosome accesibility dataset.
+
+```{r}
+## Preprocessing
+mixture <- list(mixcDNA.seu, mixchr.Seu)
+names(mixture) <- c('mix_mRNA', 'mix_chr')
+for (i in 1:length(mixture)){
+        mixture[[i]] <- NormalizeData(mixture[[i]])
+        mixture[[i]] <- FindVariableFeatures(mixture[[i]], 
+                                              selection.method = 'vst',
+                                              nfeatures = 2000)
+}
+```
+
+```{r}
+mixture$mix_mRNA <- ScaleData(mixture$mix_mRNA, verbose = FALSE)
+mixture[[1]] <- RunPCA(mixture[[1]], npcs = 30, verbose = FALSE)
+mixture[[1]] <- RunUMAP(mixture[[1]], reduction = "pca", dims = 1:30)
+mixture[[1]] <- FindNeighbors(mixture[[1]], dims = 1:30, verbose = FALSE)
+mixture[[1]] <- FindClusters(mixture[[1]], resolution= 0.5, verbose = FALSE)
+```
+
+<center>
+```{r}
+DimPlot(mixture[[1]], reduction = 'umap', label = TRUE)
+``` 
