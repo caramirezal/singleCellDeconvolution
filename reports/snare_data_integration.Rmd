@@ -83,7 +83,7 @@ Idents(adBrcDNA.Seu) <- rep('ad_mRNA', nrow(adBrcDNA.Seu))
 Idents(p0cDNA.Seu) <- rep('p0_mRNA', nrow(p0cDNA.Seu))
 ```
 
-## Data pre processing
+## Data preprocessing
 
 Preprocessing comprises the following steps:
 
@@ -105,10 +105,10 @@ for (i in 1:length(brain)){
 
 ## Data integration
 
-Next, we integrate data on gene expression for adult and neonatal brain cells. From the next figure it can be seen UMAP 
+Next, we integrate gene expression counts for adult and neonatal brain cells. From the next figure, it can be seen UMAP 
 projection of integrated data sets. Notice, that the different assay groups are clustered together. 
 
-```{r cache=TRUE, warning=FALSE, message=FALSE, fig.cap='Data integration of gene expression in adult and neonatal brain cells single cell data.'}
+```{r cache=TRUE, warning=FALSE, message=FALSE}
 ## data integration
 brain.anchors <- FindIntegrationAnchors(object.list = brain, 
                                            dims = 1:30)
@@ -121,11 +121,45 @@ DefaultAssay(brain.integrated) <- "integrated"
 brain.integrated <- ScaleData(brain.integrated, verbose = FALSE)
 brain.integrated <- RunPCA(brain.integrated, npcs = 30, verbose = FALSE)
 brain.integrated <- RunUMAP(brain.integrated, reduction = "pca", dims = 1:30)
+```
+
+<center>
+```{r, fig.cap='**Data integration of gene expression in adult and neonatal brain single cells data.** Neonatal (p0) and adult (ad) cells are shown in blue and salmon, respectively.', cache=TRUE}
 DimPlot(brain.integrated, reduction = "umap", group.by = "ident")
 ```
+</center>
 
-```{r}
-FeaturePlot(brain.integrated, features = c('Foxp1'))
+## Expression of known brain tissue markers
+
+We evaluated the expression of known markers expressed in brain tissue cells. Unc5d and Gadd45g are marker for cycling cells associated to survival mechanisms, whilst Foxp1 and Cux1 are upregulated in upper-layer neurones. 
+
+<center>
+```{r warning=FALSE, message=FALSE, cache=TRUE, fig.cap='**Gene expression of brain markers** in the integrated data of neonatal and adult single cells.'}
+FeaturePlot(brain.integrated, features = c('Unc5d', 'Gadd45g','Foxp1', 'Cux1'))
+```
+</center>
+
+## Cells clustering
+
+Then, a KNN graph based algorithm is used to cluster gene expression patterns. A total of 24 clusters were found using a high value for the `resolution` parameter (=2).
+
+```{r message=FALSE, warning=FALSE, cache=TRUE}
+brain.integrated <- FindNeighbors(brain.integrated, dims = 1:30, verbose = FALSE)
+brain.integrated <- FindClusters(brain.integrated, resolution= 2, verbose = FALSE)
 ```
 
+<center>
+```{r, cache=TRUE, message=FALSE, warning=FALSE}
+DimPlot(brain.integrated, reduction = 'umap', label = TRUE)
+```     
+</center>
 
+**TODO:**
+
+* Identification of the clusters as cell tissue subtypes.
+
+* Transference of the clusters labels information from gene expression to chromatin accesiblity data.
+
+* UMAP projection of chromatin accesibility data coloured by predicted transferred labels from gene expression.
+
+* UMAP projection of chromatin accesibility data coloured by known cell identities.
