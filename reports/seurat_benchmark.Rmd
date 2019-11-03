@@ -68,7 +68,7 @@ mixchr.Seu <- CreateSeuratObject(counts = mixchr,
 ## Clustering mixture cells
 
 First, the cells are clasified using KNN graph clustering in order to obtain cell subtypes which
-are going to be projected into chromosome accesibility dataset.
+are going to be projected into chromosome accesibility dataset. We could reproduce the four clusters observed by Chen and collaborators. 
 
 ```{r}
 ## Preprocessing
@@ -91,14 +91,58 @@ mixture[[1]] <- FindClusters(mixture[[1]], resolution= 0.5, verbose = FALSE)
 ```
 
 <center>
-```{r}
-DimPlot(mixture[[1]], reduction = 'umap', label = TRUE)
+```{r, fig.cap='**Clustering of the mRNA single cell data**. Cell labels were assigned according to the expression of cell lines markers.'}
+## Assignation of cluster names
+cell_labs <- plyr::mapvalues(x=mixture[[1]]$seurat_clusters,
+                from=c(0,1,2,3),
+                to=c('H1', 'BJ', 'K562', 'GM12878'))
+mixture[[1]][['cell_labs']] <- cell_labs
+
 ``` 
+</center>
 
-```{r}
-FeaturePlot(mixture[[1]], features = c('JUN', 'IRF8','POU5F1', 'GATA1'))
-```
+## Expression of cell lines markers
 
-```{r}
-VlnPlot(mixture[[1]], features = c('JUN', 'IRF8','POU5F1', 'GATA1'))
+Next, we wanted to identify clusters by profiling known markers for each cell line.
+BJ, GM12878, H1 and K562 express JUN, IRF8, POUF5F1 and GATA1, respectively. 
+
+
+<center>
+```{r, fig.cap='**Evaluation of the expression of markers**. '}
+VlnPlot(mixture[[1]], 
+        features = c('JUN', 'IRF8','POU5F1', 'GATA1'),
+        ncol = 2)
 ```
+</center>
+
+## UMAP projection of identified clusters
+
+Based in the previous inspection of known expression markers for each cell line,
+we perfomed UMAP projection and label the clusters with inferred identities as
+shown in the next plot.
+
+<center>
+```{r fig.cap='**UMAP projection of the clusters obtained using KNN graph method**. Four groups can be observed which were labeled according to the corresponding expression of cell line markers.'}
+DimPlot(mixture[[1]], 
+        reduction = 'umap', 
+        label = TRUE, 
+        group.by = 'cell_labs') + 
+            NoLegend()
+```
+</center>
+
+However, from the next visualization it can be seen that the expression of the markers
+in each cluster is heterogenous.
+
+<center>
+```{r fig.cap='**Expression of known markers in clusters** as visualized using UMAP projection.'}
+FeaturePlot(mixture[[1]], 
+            features = c('JUN', 'IRF8','POU5F1', 'GATA1'))
+```
+</center>
+
+TODO:
+
+* Transference of the data labels from gene expression data to chromation accesibility quantifications using Seurat.
+
+* Evaluate the match between transfered data with known labels.
