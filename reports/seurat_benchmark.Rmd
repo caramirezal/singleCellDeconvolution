@@ -94,3 +94,11 @@ mixture[[1]] <- FindClusters(mixture[[1]], resolution= 0.5, verbose = FALSE)
 ```{r}
 DimPlot(mixture[[1]], reduction = 'umap', label = TRUE)
 ``` 
+
+```{r}
+FeaturePlot(mixture[[1]], features = c('JUN', 'IRF8','POU5F1', 'GATA1'))
+```
+
+```{r}
+VlnPlot(mixture[[1]], features = c('JUN', 'IRF8','POU5F1', 'GATA1'))
+```
