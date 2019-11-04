@@ -1,0 +1,67 @@
+---
+title: "scATAC data transfer using Seurat testing"
+author: "Health Data Science Unit"
+date: "11/4/2019"
+output: 
+   html_document
+---
+
+## Downloading data
+
+```{r, echo=FALSE}
+knitr::opts_chunk$set(warning = FALSE,
+                      message = FALSE,
+                      cache = TRUE)
+```
+
+**Downloading data**
+
+Switch eval parameter to TRUE to execute chunk. Run just once.
+
+```{r, eval=FALSE}
+## Downloading data (Run once)
+
+## scATAC peaks count matrix
+scATAC_peaks_mtx_h5_url <- 'http://cf.10xgenomics.com/samples/cell-atac/1.0.1/atac_v1_pbmc_10k/atac_v1_pbmc_10k_filtered_peak_bc_matrix.h5'
+scATAC_peaks_mtx_h5_path <- '../data/scATACinfoTransferTutorial/atac_v1_pbmc_10k_filtered_peak_bc_matrix.h5'
+download.file(url = scATAC_peaks_mtx_h5_url, 
+              destfile = scATAC_peaks_mtx_h5_path)
+
+## scATAC metadata
+scATAC_metadata_url <- 'http://cf.10xgenomics.com/samples/cell-atac/1.0.1/atac_v1_pbmc_10k/atac_v1_pbmc_10k_singlecell.csv'
+scATAC_metadata_path <- '../data/scATACinfoTransferTutorial/atac_v1_pbmc_10k_singlecell.csv'
+download.file(url = scATAC_metadata_url,
+              destfile = scATAC_metadata_path)
+## scRNAseq data
+scRNAseq_url <- 'http://cf.10xgenomics.com/samples/cell-exp/3.0.0/pbmc_10k_v3/pbmc_10k_v3_filtered_feature_bc_matrix.h5'
+scRNAseq_path <- '../data/scATACinfoTransferTutorial/pbmc_10k_v3_filtered_feature_bc_matrix.h5'
+download.file(url = scRNAseq_url,
+              scRNAseq_path)
+
+```
+
+
+
+```{r}
+library(Seurat)
+library(ggplot2)
+
+
+peaks <- Read10X_h5("../data/scATACinfoTransferTutorial/atac_v1_pbmc_10k_filtered_peak_bc_matrix.h5")
+# create a gene activity matrix from the peak matrix and GTF, using chromosomes 1:22, X, and Y.
+# Peaks that fall within gene bodies, or 2kb upstream of a gene, are considered
+activity.matrix <- CreateGeneActivityMatrix(peak.matrix = peaks, 
+                                            annotation.file = "../data/Homo_sapiens.GRCh37.87.gtf.gz", 
+                                            seq.levels = c(1:22, "X", "Y"), 
+                                            upstream = 2000, verbose = TRUE)
+
+
+```
+
+
+```{r}
+pbmc.atac <- CreateSeuratObject(counts = peaks, 
+                                assay = "ATAC", 
+                                project = "10x_ATAC")
+
+```

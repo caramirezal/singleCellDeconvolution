@@ -141,6 +141,41 @@ FeaturePlot(mixture[[1]],
 ```
 </center>
 
+
+## Information transference
+
+```{r}
+
+activity.matrix <- CreateGeneActivityMatrix(peak.matrix = GetAssayData(mixture[[2]], slot='counts'), 
+                                            annotation.file = "../data/Homo_sapiens.GRCh37.87.gtf.gz", 
+                                            seq.levels = c(1:22, "X", "Y"), 
+                                            upstream = 2000, verbose = TRUE)
+mixture.atac <- CreateSeuratObject(counts = GetAssayData(mixture[[2]], slot='counts'),
+                                   assay = 'ATAC',
+                                   project = "ATAC_mixture_projection")
+mixture.atac[['ACTIVITY']] <- CreateAssayObject(counts = activity.matrix)
+mixture.atac[['tech']] <- 'atac'
+
+DefaultAssay(mixture.atac) <- "ACTIVITY"
+mixture.atac <- FindVariableFeatures(mixture.atac)
+mixture.atac <- NormalizeData(mixture.atac)
+mixture.atac <- ScaleData(mixture.atac)
+
+DefaultAssay(mixture.atac) <- "ATAC"
+VariableFeatures(mixture.atac) <- names(which(Matrix::rowSums(mixture.atac) > 100))
+mixture.atac <- RunLSI(mixture.atac, n = 50, scale.max = NULL)
+mixture.atac <- RunUMAP(mixture.atac, reduction = "lsi", dims = 1:50)
+
+## needs to find out scATAC Seurat input object
+
+mixture[[1]] <- ScaleData(mixture[[1]])
+mixture[[1]] <- RunLSI(mixture[[1]])
+mixture[[1]] <- RunUMAP(mixture[[1]], reduction = 'pca', dims = 1:30)
+anchors <- FindTransferAnchors(reference = mixture[[1]],
+                               query = mixture.atac) 
+##str(mixture[[2]])
+```
+
 TODO:
 
 * Transference of the data labels from gene expression data to chromation accesibility quantifications using Seurat.
