@@ -1,0 +1,85 @@
+---
+title: "Clustering brain single cells data"
+author: "Health Data Science Unit"
+date: "11/6/2019"
+output: 
+    html_document:
+            code_fold: 'hide'
+---
+
+```{r echo=FALSE}
+## set defaults settings for chunks
+knitr::opts_chunk$set(cache=TRUE, 
+                      message=FALSE, 
+                      warning=FALSE)
+```
+
+## 1. Loading data into R
+
+```{r}
+library(Seurat)
+library(dplyr)
+
+## Embryonic cells 
+## GSE126074_P0_BrainCortex mRNA
+cDNADir <- '../data/chenS2019sameCellsData/GSE126074_P0_BrainCortex_SNAREseq_cDNA/'
+p0cDNA <- Read10X(data.dir = cDNADir, 
+                            gene.column = 1      ## necessary parameter, otherwise runs error
+        )
+p0cDNA.Seu <- CreateSeuratObject(counts = p0cDNA,
+                                 project = 'sameCellsData', 
+                                 min.cells = 10,
+                                 min.features = 500)
+
+p0chrDir <- '../data/chenS2019sameCellsData/GSE126074_P0_BrainCortex_SNAREseq_chromatin/'
+p0chr <- Read10X(data.dir = p0chrDir,
+                  gene.column = 1      ## necessary parameter, otherwise runs error
+)
+p0chr.Seu <- CreateSeuratObject(counts = p0chr,
+                                 project = 'sameCellsData', 
+                                 min.cells = 10,
+                                 min.features = 500)
+```
+
+## 2. Pre-processing
+
+```{r}
+## Preprocessing
+p0cells <- list(p0cDNA.Seu, p0chr.Seu)
+names(p0cells) <- c('p0_mRNA', 'p0_chr')
+for (i in 1:length(p0cells)){
+        p0cells[[i]] <- NormalizeData(p0cells[[i]])
+        p0cells[[i]] <- FindVariableFeatures(p0cells[[i]], 
+                                              selection.method = 'vst',
+                                              nfeatures = 1000)
+}
+```
+
+## 3. Clustering
+
+```{r}
+p0cells[[1]] <- p0cells[[1]] %>% 
+                  ScaleData(verbose = FALSE) %>% 
+                   RunPCA(npcs = 10, verbose = FALSE) %>%
+                    RunUMAP(reduction = "pca", dims = 1:9, metric = 'cosine') %>%
+                     FindNeighbors(dims = 1:9, verbose = FALSE) %>% 
+                      FindClusters(resolution= 2, verbose = FALSE)
+```
+
+## 4. UMAP projection of clusters
+
+<center>
+```{r fig.cap='**UMAP projection of the clusters obtained using KNN graph method**. Four groups can be observed which were labeled according to the corresponding expression of cell line markers.'}
+DimPlot(p0cells[[1]], 
+        reduction = 'umap', 
+        label = TRUE) + 
+            NoLegend()
+```
+</center>
+
+```{r}
+p0cells[[1]] %>%
+        JackStraw(num.replicate = 30) %>%
+         ScoreJackStraw(dims = 1:9) %>%
+          ElbowPlot
+```
