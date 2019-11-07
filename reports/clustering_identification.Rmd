@@ -28,8 +28,8 @@ p0cDNA <- Read10X(data.dir = cDNADir,
         )
 p0cDNA.Seu <- CreateSeuratObject(counts = p0cDNA,
                                  project = 'sameCellsData', 
-                                 min.cells = 10,
-                                 min.features = 500)
+                                 min.cells = 1,
+                                 min.features = 1)
 
 p0chrDir <- '../data/chenS2019sameCellsData/GSE126074_P0_BrainCortex_SNAREseq_chromatin/'
 p0chr <- Read10X(data.dir = p0chrDir,
@@ -37,8 +37,8 @@ p0chr <- Read10X(data.dir = p0chrDir,
 )
 p0chr.Seu <- CreateSeuratObject(counts = p0chr,
                                  project = 'sameCellsData', 
-                                 min.cells = 10,
-                                 min.features = 500)
+                                 min.cells = 1,
+                                 min.features = 1)
 ```
 
 ## 2. Pre-processing
@@ -51,7 +51,7 @@ for (i in 1:length(p0cells)){
         p0cells[[i]] <- NormalizeData(p0cells[[i]])
         p0cells[[i]] <- FindVariableFeatures(p0cells[[i]], 
                                               selection.method = 'vst',
-                                              nfeatures = 1000)
+                                              nfeatures = 3000)
 }
 ```
 
@@ -63,7 +63,7 @@ p0cells[[1]] <- p0cells[[1]] %>%
                    RunPCA(npcs = 10, verbose = FALSE) %>%
                     RunUMAP(reduction = "pca", dims = 1:9, metric = 'cosine') %>%
                      FindNeighbors(dims = 1:9, verbose = FALSE) %>% 
-                      FindClusters(resolution= 2, verbose = FALSE)
+                      FindClusters(resolution= 1.55, verbose = FALSE)
 ```
 
 ## 4. UMAP projection of clusters
@@ -77,9 +77,38 @@ DimPlot(p0cells[[1]],
 ```
 </center>
 
+## PCA dimensionality
 ```{r}
 p0cells[[1]] %>%
         JackStraw(num.replicate = 30) %>%
          ScoreJackStraw(dims = 1:9) %>%
           ElbowPlot
 ```
+
+
+## Clusters identification
+
+```{r}
+markers <- FindAllMarkers(p0cells[[1]], 
+                          only.pos = TRUE, 
+                          min.pct = .10, 
+                          logfc.threshold = 0.25, 
+                          test.use = 'wilcox')
+```
+
+```{r}
+top.markers <- markers %>% 
+        group_by(cluster) %>% 
+        top_n(n = 30, wt = avg_logFC) 
+```
+
+
+```{r}
+DoHeatmap(p0cells[[1]], features = top.markers$gene, draw.lines = TRUE) + NoLegend()
+```
+
+
+```{r}
+write.table('../data/')
+```
+
