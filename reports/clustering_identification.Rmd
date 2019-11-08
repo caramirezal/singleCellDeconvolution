@@ -51,7 +51,7 @@ for (i in 1:length(p0cells)){
         p0cells[[i]] <- NormalizeData(p0cells[[i]])
         p0cells[[i]] <- FindVariableFeatures(p0cells[[i]], 
                                               selection.method = 'vst',
-                                              nfeatures = 3000)
+                                              nfeatures = 1000)
 }
 ```
 
@@ -63,7 +63,7 @@ p0cells[[1]] <- p0cells[[1]] %>%
                    RunPCA(npcs = 10, verbose = FALSE) %>%
                     RunUMAP(reduction = "pca", dims = 1:9, metric = 'cosine') %>%
                      FindNeighbors(dims = 1:9, verbose = FALSE) %>% 
-                      FindClusters(resolution= 1.55, verbose = FALSE)
+                      FindClusters(resolution= 1.5, verbose = FALSE)
 ```
 
 ## 4. UMAP projection of clusters
@@ -77,8 +77,10 @@ DimPlot(p0cells[[1]],
 ```
 </center>
 
+
+```{r, eval=FALSE}
 ## PCA dimensionality
-```{r}
+
 p0cells[[1]] %>%
         JackStraw(num.replicate = 30) %>%
          ScoreJackStraw(dims = 1:9) %>%
@@ -107,8 +109,27 @@ top.markers <- markers %>%
 DoHeatmap(p0cells[[1]], features = top.markers$gene, draw.lines = TRUE) + NoLegend()
 ```
 
+```{r, eval=FALSE}
+write.table(top.markers, 
+            '../data/diffExpGenClust.tsv')
+```
 
 ```{r}
-write.table('../data/')
+## Create a dot plot with median values per marker per cluster
+## Scaling
+p0cDNA.Seu <- NormalizeData(p0cDNA.Seu)
+p0cDNAscalated <- as.matrix(p0cDNA.Seu@assays$RNA@data)
+
+## Loading Chen differentially expressed markers
+difExp <- read.table(file = '../data/difExpGenesChen.tsv',
+                     stringsAsFactors = FALSE,
+                     skip = 3, 
+                     sep = '\t',
+                     header = TRUE) 
+
+p0cDNAscalated %>% 
+        as.data.frame %>% 
+        filter(rownames(p0cDNAscalated) %in% difExp$Gene) 
 ```
+
 
