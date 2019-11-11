@@ -55,81 +55,52 @@ for (i in 1:length(p0cells)){
 }
 ```
 
-## 3. Clustering
+## 3. UMAP projection of clusters
+
+Cell annotations were kindly provided by Dr. Kun Zhang. 
+
 
 ```{r}
 p0cells[[1]] <- p0cells[[1]] %>% 
                   ScaleData(verbose = FALSE) %>% 
                    RunPCA(npcs = 10, verbose = FALSE) %>%
-                    RunUMAP(reduction = "pca", dims = 1:9, metric = 'cosine') %>%
-                     FindNeighbors(dims = 1:9, verbose = FALSE) %>% 
-                      FindClusters(resolution= 1.5, verbose = FALSE)
+                    RunUMAP(reduction = "pca", dims = 1:9, metric = 'cosine')
 ```
 
-## 4. UMAP projection of clusters
+```{r}
+metadata  <- readRDS("P0BrainCortex_SNAREseq_metadata_full.rds")
+p0cells[[1]]$'clust_ann' <- metadata$IdentChar
+```
+
+
 
 <center>
 ```{r fig.cap='**UMAP projection of the clusters obtained using KNN graph method**. Four groups can be observed which were labeled according to the corresponding expression of cell line markers.'}
 DimPlot(p0cells[[1]], 
         reduction = 'umap', 
-        label = TRUE) + 
+        label = TRUE, 
+        group.by = 'clust_ann') + 
             NoLegend()
 ```
 </center>
 
 
-```{r, eval=FALSE}
-## PCA dimensionality
-
-p0cells[[1]] %>%
-        JackStraw(num.replicate = 30) %>%
-         ScoreJackStraw(dims = 1:9) %>%
-          ElbowPlot
-```
-
-
-## Clusters identification
+## Information transfer
 
 ```{r}
-markers <- FindAllMarkers(p0cells[[1]], 
-                          only.pos = TRUE, 
-                          min.pct = .10, 
-                          logfc.threshold = 0.25, 
-                          test.use = 'wilcox')
-```
-
-```{r}
-top.markers <- markers %>% 
-        group_by(cluster) %>% 
-        top_n(n = 30, wt = avg_logFC) 
+activity.matrix <- CreateGeneActivityMatrix(peak.matrix = GetAssayData(p0cells[[2]], slot='counts'), 
+                                            annotation.file = "../data/Homo_sapiens.GRCh37.87.gtf.gz", 
+                                            seq.levels = c(1:22, "X", "Y"), 
+                                            upstream = 2000, verbose = TRUE)
 ```
 
 
-```{r}
-DoHeatmap(p0cells[[1]], features = top.markers$gene, draw.lines = TRUE) + NoLegend()
-```
 
-```{r, eval=FALSE}
-write.table(top.markers, 
-            '../data/diffExpGenClust.tsv')
-```
 
-```{r}
-## Create a dot plot with median values per marker per cluster
-## Scaling
-p0cDNA.Seu <- NormalizeData(p0cDNA.Seu)
-p0cDNAscalated <- as.matrix(p0cDNA.Seu@assays$RNA@data)
 
-## Loading Chen differentially expressed markers
-difExp <- read.table(file = '../data/difExpGenesChen.tsv',
-                     stringsAsFactors = FALSE,
-                     skip = 3, 
-                     sep = '\t',
-                     header = TRUE) 
 
-p0cDNAscalated %>% 
-        as.data.frame %>% 
-        filter(rownames(p0cDNAscalated) %in% difExp$Gene) 
-```
+
+
+
 
 
