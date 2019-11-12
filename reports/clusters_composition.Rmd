@@ -1,0 +1,99 @@
+---
+title: "Clusters composition"
+author: "Carlos Ramirez Alvarez"
+date: "11/12/2019"
+output: 
+    html_document:
+            code_fold: 'hide'
+---
+
+## Data preprocessing
+
+```{r}
+knitr::opts_chunk$set(message = FALSE,
+                      warning = FALSE,
+                      cache = TRUE)
+```
+
+
+```{r}
+## 
+library(Seurat)
+library(dplyr)
+library(reshape2)
+library(ggplot2)
+
+## Embryonic cells 
+## GSE126074_P0_BrainCortex mRNA
+cDNADir <- '../data/chenS2019sameCellsData/GSE126074_P0_BrainCortex_SNAREseq_cDNA/'
+p0cDNA <- Read10X(data.dir = cDNADir, 
+                            gene.column = 1      ## necessary parameter, otherwise runs error
+        )
+p0cDNA.Seu <- CreateSeuratObject(counts = p0cDNA,
+                                 project = 'sameCellsData', 
+                                 min.cells = 1,
+                                 min.features = 1)
+```
+
+```{r}
+p0cDNA.Seu <- NormalizeData(p0cDNA.Seu) %>%
+                  FindVariableFeatures(selection.method = 'vst',
+                                       nfeatures = 1000)
+```
+
+```{r}
+metadata  <- readRDS("P0BrainCortex_SNAREseq_metadata_full.rds")
+p0cDNA.Seu$'clust_ann' <- metadata$IdentChar
+```
+
+```{r}
+p0cDNA.Seu <- ScaleData(p0cDNA.Seu, verbose = FALSE)
+p0cDNA.Seu <- RunPCA(p0cDNA.Seu, npcs = 30, verbose = FALSE)
+p0cDNA.Seu <- RunUMAP(p0cDNA.Seu, reduction = "pca", dims = 1:30)
+```
+
+## Clustering
+
+```{r}
+p0cDNA.Seu <- FindNeighbors(p0cDNA.Seu, dims = 1:30, verbose = FALSE)
+p0cDNA.Seu <- FindClusters(p0cDNA.Seu, resolution= 2.2, verbose = FALSE)
+```
+
+<center>
+```{r fig.cap='**Gene expression in neonatal cells clustered using Seurat.** '}
+DimPlot(p0cDNA.Seu, 
+        reduction = 'umap', 
+        label = TRUE, 
+        group.by = 'seurat_clusters') + 
+            NoLegend()
+```
+
+
+```{r fig.cap='**Gene expression in neonatal cells annotated using Chen S and colabs clusters**.'}
+DimPlot(p0cDNA.Seu, 
+        reduction = 'umap', 
+        label = TRUE, 
+        group.by = 'clust_ann') + 
+            NoLegend()
+```
+
+</center>
+
+## Seurat cluster composition
+
+<center>
+```{r fig.cap='**Cell composition (manually annotated cells) in clusters as retrieved by Seurat**.'}
+library(dplyr)
+
+composition <- table(p0cDNA.Seu$clust_ann, p0cDNA.Seu$seurat_clusters)
+theme_set(theme_light())
+composition %>% 
+        as.data.frame %>%
+        ggplot(aes(x=Var2, 
+                   y=Freq, 
+                   fill=Var1)) +
+        geom_bar(stat = 'identity', 
+                 position = 'fill')
+```
+
+</center>
