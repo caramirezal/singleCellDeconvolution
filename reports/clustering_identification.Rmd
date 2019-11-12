@@ -9,8 +9,7 @@ output:
 
 ```{r echo=FALSE}
 ## set defaults settings for chunks
-knitr::opts_chunk$set(cache=TRUE, 
-                      message=FALSE, 
+knitr::opts_chunk$set(message=FALSE, 
                       warning=FALSE)
 ```
 
@@ -23,22 +22,29 @@ library(dplyr)
 ## Embryonic cells 
 ## GSE126074_P0_BrainCortex mRNA
 cDNADir <- '../data/chenS2019sameCellsData/GSE126074_P0_BrainCortex_SNAREseq_cDNA/'
-p0cDNA <- Read10X(data.dir = cDNADir, 
-                            gene.column = 1      ## necessary parameter, otherwise runs error
-        )
-p0cDNA.Seu <- CreateSeuratObject(counts = p0cDNA,
-                                 project = 'sameCellsData', 
-                                 min.cells = 1,
-                                 min.features = 1)
+p0cDNA <- Read10X(
+        data.dir = cDNADir, 
+        gene.column = 1      ## necessary parameter, otherwise runs error
+)
+p0cDNA@Dimnames[[1]] <- toupper(p0cDNA@Dimnames[[1]])
+p0cDNA.Seu <- CreateSeuratObject(
+        counts = p0cDNA,
+        project = 'sameCellsData', 
+        min.cells = 1,
+        min.features = 1
+)
 
 p0chrDir <- '../data/chenS2019sameCellsData/GSE126074_P0_BrainCortex_SNAREseq_chromatin/'
-p0chr <- Read10X(data.dir = p0chrDir,
-                  gene.column = 1      ## necessary parameter, otherwise runs error
+p0chr <- Read10X(
+        data.dir = p0chrDir,
+        gene.column = 1      ## necessary parameter, otherwise runs error
 )
-p0chr.Seu <- CreateSeuratObject(counts = p0chr,
-                                 project = 'sameCellsData', 
-                                 min.cells = 1,
-                                 min.features = 1)
+p0chr.Seu <- CreateSeuratObject(
+        counts = p0chr,
+        project = 'sameCellsData', 
+        min.cells = 1,
+        min.features = 1
+)
 ```
 
 ## 2. Pre-processing
@@ -72,8 +78,6 @@ metadata  <- readRDS("P0BrainCortex_SNAREseq_metadata_full.rds")
 p0cells[[1]]$'clust_ann' <- metadata$IdentChar
 ```
 
-
-
 <center>
 ```{r fig.cap='**UMAP projection of the clusters obtained using KNN graph method**. Four groups can be observed which were labeled according to the corresponding expression of cell line markers.'}
 DimPlot(p0cells[[1]], 
@@ -88,19 +92,89 @@ DimPlot(p0cells[[1]],
 ## Information transfer
 
 ```{r}
-activity.matrix <- CreateGeneActivityMatrix(peak.matrix = GetAssayData(p0cells[[2]], slot='counts'), 
-                                            annotation.file = "../data/Homo_sapiens.GRCh37.87.gtf.gz", 
-                                            seq.levels = c(1:22, "X", "Y"), 
-                                            upstream = 2000, verbose = TRUE)
+activity.matrix <- CreateGeneActivityMatrix(
+        peak.matrix = GetAssayData(p0chr.Seu, slot='counts'), 
+        annotation.file = "../data/Homo_sapiens.GRCh37.87.gtf", 
+        seq.levels = c(1:22, "X", "Y"), 
+        upstream = 2000, 
+        verbose = TRUE
+)
 ```
 
 
+## Processing  gene activity matrix
+
+```{r}
+## creation of the Seurat object containing scATAC counts
+p0_atac <- CreateSeuratObject(
+        counts = GetAssayData(p0chr.Seu, slot = 'counts'),
+        assay = 'ATAC',
+        project = 'multilayer_integration'
+)
+## Adding estimated gene activity matrix
+p0_atac[['activity']] <- CreateAssayObject(
+        counts = activity.matrix
+)
+
+```
 
 
+```{r}
+DefaultAssay(p0_atac) <- 'activity'
+p0_atac <- FindVariableFeatures(p0_atac) %>%
+              NormalizeData() %>%
+                ScaleData()
+```
+
+## Processing ATAC data
+
+```{r}
+DefaultAssay(p0_atac) <- 'ATAC'
+VariableFeatures(p0_atac) <- names(which(Matrix::rowSums(p0_atac) > 100))
+p0_atac <- RunLSI(p0_atac, n = 50, scale.max = NULL)
+p0_atac <- RunUMAP(p0_atac, reduction = "lsi", dims = 1:50)
+```
+
+```{r}
+DefaultAssay(p0_atac) <- 'activity'
+anchors <- FindTransferAnchors(
+        reference = p0cells[[1]],
+        query = p0_atac, 
+        reduction = 'cca'
+)
+```
+
+```{r}
+preds <- TransferData(
+        anchorset = anchors,
+        refdata = p0cells[[1]]$clust_ann,
+        weight.reduction = p0_atac[['lsi']]
+)
+```
 
 
+```{r}
+## adding metadata to ATAC data from gene expression labels
 
+## getting the order in which cells appears in ATAC data
+ord <- match(colnames(p0_atac), 
+         colnames(p0cells[[1]])) 
+p0_atac[['gene_exp']] <- p0cells[[1]]$clust_ann[ord] 
 
+```
 
+```{r fig.cap='**UMAP projection of ATAC data in neonatal cells tagged using the labels from gene expression clusters manually curated.** '}
+#p0_atac[['preds']] <- preds$predicted.id
+DimPlot(p0_atac, 
+        reduction = 'umap', 
+        label = TRUE, 
+        group.by = 'gene_exp') + NoLegend()
+```
 
+```{r fig.cap='**UMAP representation of ATAC data labeled by the transferred predicted ids from mRNA dataset.**.'}
+p0_atac[['preds']] <- preds$predicted.id
+DimPlot(p0_atac, 
+        reduction = 'umap', 
+        group.by = 'preds')
+```
 
