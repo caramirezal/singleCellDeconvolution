@@ -78,8 +78,10 @@ metadata  <- readRDS("P0BrainCortex_SNAREseq_metadata_full.rds")
 p0cells[[1]]$'clust_ann' <- metadata$IdentChar
 ```
 
+## Gene expression clustering of neonatal cells
+
 <center>
-```{r fig.cap='**UMAP projection of the clusters obtained using KNN graph method**. Four groups can be observed which were labeled according to the corresponding expression of cell line markers.'}
+```{r fig.cap='**UMAP projection of the clusters obtained using KNN graph method**.'}
 DimPlot(p0cells[[1]], 
         reduction = 'umap', 
         label = TRUE, 
@@ -163,6 +165,8 @@ p0_atac[['gene_exp']] <- p0cells[[1]]$clust_ann[ord]
 
 ```
 
+## UMAP projection of scATAC data 
+
 ```{r fig.cap='**UMAP projection of ATAC data in neonatal cells tagged using the labels from gene expression clusters manually curated.** '}
 #p0_atac[['preds']] <- preds$predicted.id
 DimPlot(p0_atac, 
@@ -170,6 +174,8 @@ DimPlot(p0_atac,
         label = TRUE, 
         group.by = 'gene_exp') + NoLegend()
 ```
+
+## Transfer learning from gene expression to ATAC 
 
 ```{r fig.cap='**UMAP representation of ATAC data labeled by the transferred predicted ids from mRNA dataset.**.'}
 p0_atac[['preds']] <- preds$predicted.id
