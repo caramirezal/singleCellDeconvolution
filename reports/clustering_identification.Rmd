@@ -10,7 +10,8 @@ output:
 ```{r echo=FALSE}
 ## set defaults settings for chunks
 knitr::opts_chunk$set(message=FALSE, 
-                      warning=FALSE)
+                      warning=FALSE,
+                      cache = TRUE)
 ```
 
 ## 1. Loading data into R
@@ -182,5 +183,26 @@ p0_atac[['preds']] <- preds$predicted.id
 DimPlot(p0_atac, 
         reduction = 'umap', 
         group.by = 'preds')
+```
+
+```{r}
+p0_atac <- ScaleData(p0_atac, 
+                        verbose = FALSE)
+p0_atac <- RunPCA(p0_atac, 
+                     npcs = 30, 
+                     verbose = FALSE)
+
+```
+
+```{r}
+p0_atac <- FindNeighbors(p0_atac, dims = 1:15, verbose = FALSE)
+p0_atac <- FindClusters(p0_atac, resolution= 1, verbose = FALSE)
+```
+
+```{r}
+DimPlot(p0_atac,
+        group.by = 'seurat_clusters',
+        reduction = 'umap',
+        label = TRUE) + NoLegend()
 ```
 
