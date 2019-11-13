@@ -1,0 +1,216 @@
+---
+title: "Evaluating closeness between datasets"
+author: "Health Data Science Unit"
+date: "11/13/2019"
+output:
+  html_document:
+    code_fold: hide
+  pdf_document: default
+---
+
+# Neonatal data 
+
+## Preprocessing
+
+```{r, echo=FALSE}
+## Settings
+knitr::opts_chunk$set(
+        message = FALSE,
+        warning = FALSE, 
+        cache = TRUE
+)
+```
+
+```{r}
+## dependencies
+library(dplyr)
+library(Seurat)
+```
+
+
+```{r}
+## Embryonic cells 
+## GSE126074_P0_BrainCortex mRNA
+cDNADir <- '../data/chenS2019sameCellsData/GSE126074_P0_BrainCortex_SNAREseq_cDNA/'
+p0cDNA <- Read10X(
+        data.dir = cDNADir, 
+        gene.column = 1      ## necessary parameter, otherwise runs error
+)
+## Hack to stantardize features names
+p0cDNA@Dimnames[[1]] <- toupper(p0cDNA@Dimnames[[1]])
+p0cDNA.Seu <- CreateSeuratObject(
+        counts = p0cDNA,
+        project = 'gene_expression', 
+        min.cells = 1,
+        min.features = 1
+)
+
+p0chrDir <- '../data/chenS2019sameCellsData/GSE126074_P0_BrainCortex_SNAREseq_chromatin/'
+p0chr <- Read10X(
+        data.dir = p0chrDir,
+        gene.column = 1      ## necessary parameter, otherwise runs error
+)
+p0chr.Seu <- CreateSeuratObject(
+        counts = p0chr,
+        project = 'atac', 
+        min.cells = 1,
+        min.features = 1
+)
+```
+
+## Processing gene expression
+
+```{r}
+p0cDNA.Seu <- NormalizeData(p0cDNA.Seu) %>%
+                  FindVariableFeatures(selection.method = 'vst',
+                                       nfeatures = 1000)
+```
+
+```{r}
+metadata  <- readRDS("P0BrainCortex_SNAREseq_metadata_full.rds")
+p0cDNA.Seu$'clust_ann' <- metadata$IdentChar
+```
+
+```{r}
+p0cDNA.Seu <- ScaleData(p0cDNA.Seu, verbose = FALSE)
+p0cDNA.Seu <- RunPCA(p0cDNA.Seu, npcs = 30, verbose = FALSE)
+p0cDNA.Seu <- RunUMAP(p0cDNA.Seu, reduction = "pca", dims = 1:30)
+```
+
+## Preprocessing ATAC data
+
+```{r}
+activity.matrix <- CreateGeneActivityMatrix(
+        peak.matrix = GetAssayData(p0chr.Seu, slot='counts'), 
+        annotation.file = "../data/Homo_sapiens.GRCh37.87.gtf", 
+        seq.levels = c(1:22, "X", "Y"), 
+        upstream = 2000, 
+        verbose = TRUE
+)
+```
+
+```{r}
+## creation of the Seurat object containing scATAC counts
+p0_atac <- CreateSeuratObject(
+        counts = GetAssayData(p0chr.Seu, slot = 'counts'),
+        assay = 'ATAC',
+        project = 'multilayer_integration'
+)
+## Adding estimated gene activity matrix
+p0_atac[['activity']] <- CreateAssayObject(
+        counts = activity.matrix
+)
+```
+
+```{r}
+## adding metadata to ATAC data from gene expression labels
+
+## getting the order in which cells appears in ATAC data
+ord <- match(colnames(p0_atac), 
+         colnames(p0cDNA.Seu)) 
+p0_atac[['clust_ann']] <- p0cDNA.Seu$clust_ann[ord] 
+
+```
+
+```{r}
+DefaultAssay(p0_atac) <- 'activity'
+p0_atac <- FindVariableFeatures(p0_atac) %>%
+              NormalizeData() %>%
+                ScaleData()
+```
+
+```{r}
+p0_atac <- RunPCA(p0_atac, 
+                  npcs = 10, 
+                  verbose = FALSE) 
+```
+
+
+```{r}
+p0_atac <- RunUMAP(p0_atac, 
+                   reduction = "pca", 
+                   dims = 0:9)
+```
+
+```{r}
+brain <- list(p0cDNA.Seu, p0_atac)
+## data integration
+anchors <- FindIntegrationAnchors(object.list = brain, 
+                                           dims = 1:30)
+```
+
+
+```{r}
+integrated <- IntegrateData(anchorset = anchors,
+                                     dims = 1:30)
+
+# Visualisation of the integrated data
+DefaultAssay(integrated) <- "integrated"
+integrated <- ScaleData(integrated, 
+                        verbose = FALSE)
+integrated <- RunPCA(integrated, 
+                     npcs = 30, 
+                     verbose = FALSE)
+integrated <- RunUMAP(integrated, 
+                      reduction = "pca", 
+                      dims = 1:30)
+```
+
+
+
+```{r}
+datasets <- plyr::mapvalues(integrated$orig.ident,
+                            from = unique(integrated$orig.ident),
+                            to = c('gene expression', 'atac'))
+integrated <- AddMetaData(integrated, 
+                          metadata = datasets, 
+                          col.name = 'datasets') 
+```
+
+## Gene expression + ATAC integrated data
+
+### Label using manual annotations
+
+<center>
+
+```{r}
+DimPlot(integrated, 
+        reduction = "umap", 
+        group.by = "clust_ann",
+        label = FALSE)  
+```
+</center>
+
+### Labeled by data type 
+
+<center>
+```{r}
+DimPlot(integrated, 
+        reduction = "umap", 
+        group.by = "datasets",
+        label = TRUE)  + NoLegend()
+```
+</center>
+
+## Clustering using kNN graph 
+
+```{r}
+integrated <- FindNeighbors(integrated, 
+                            reduction = 'pca',
+                            dims = 1:10,
+                            verbose = FALSE)
+integrated <- FindClusters(integrated,
+                           resolution = 2,
+                           verbose = FALSE)
+```
+
+<center>
+
+```{r}
+DimPlot(integrated,
+        reduction = 'umap',
+        group.by = 'seurat_clusters',
+        label = TRUE) + NoLegend() 
+```
+
+</center>
