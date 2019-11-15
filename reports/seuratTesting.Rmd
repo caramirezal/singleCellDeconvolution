@@ -5,12 +5,34 @@ date: "9/18/2019"
 output: html_document
 ---
 
+## Setup
+
+```{r}
+## Knitr dependencies
+knitr::opts_chunk$set(warning = FALSE,
+                      message = FALSE,
+                      cache = TRUE)
+
+## Dependencies
+library(Seurat)
+library(SeuratData)
+```
+
 ## 10X input
+
+```{r}
+
+## Downloading data - Run just once
+#url1 <- 'https://s3-us-west-2.amazonaws.com/10x.files/samples/cell/pbmc3k/pbmc3k_filtered_gene_bc_matrices.tar.gz'
+#download.file(url = url1, destfile = '../data/pbmc3k_filtered_gene_bc_matrices.tar.gz')
+#system('tar -xvzf ../pbmc3k_filtered_gene_bc_matrices.tar.gz -C ../data/')
+#file.remove('../data/pbmc3k_filtered_gene_bc_matrices.tar.gz')
+```
 
 The following files are the input of Seurat 10x function.
 
 ```{r}
-dataPath <- '../data/pbmc3k/filtered_gene_bc_matrices/hg19/'
+dataPath <- '../data/filtered_gene_bc_matrices/hg19/'
 files <- list.files(dataPath)
 files
 ```
@@ -57,7 +79,11 @@ These files are the output of the [cellRanger](https://support.10xgenomics.com/s
 ```{r warning=FALSE, message=FALSE}
 library(Seurat)
 
-pbmc <- Read10X(data.dir = '../data/pbmc3k/filtered_gene_bc_matrices/hg19/')
+pbmc <- Read10X(data.dir = '../data/filtered_gene_bc_matrices/hg19/')
 str(pbmc)
+```
+
+```{r}
+
 ```
 

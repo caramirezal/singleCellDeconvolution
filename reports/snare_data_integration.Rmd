@@ -7,7 +7,14 @@ output:
      code_folding: "hide"
 ---
 
-Here, we present a pipeline for integration and analysis of the data on SNARE-seq from 
+
+```{r, echo=FALSE}
+knitr::opts_chunk$set(warning = FALSE,
+                      message = FALSE,
+                      cache = TRUE)
+```
+
+Here, we present a pipeline for integration and analysis of the single cells data on SNARE-seq from 
 [Chen S et al, 2019](http://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE126074) of 
 neonatal and adult mouse cerebral cortices. SNARE-seq allows to jointly quantifiy gene 
 expression along with chromatin accesibility in the same cells.  
@@ -16,7 +23,7 @@ expression along with chromatin accesibility in the same cells.
 
 * 1. Integration of adult and neonatal mRNA-seq data.
 
-* 2. Projection of the integrated set of chromosome accesibility data (adults/integrated?).
+* 2. Projection of the integrated set of chromosome accesibility data.
 
 * 3. Cross validation of the predicted against barcodes IDs cell identities. 
 
@@ -25,7 +32,7 @@ expression along with chromatin accesibility in the same cells.
 Data is available in the form of cellRanger 10x Chromium output and can be imported
 in a straightforward manner. Display the **code** tab for details.
 
-```{r warning=FALSE, message=FALSE, cache=TRUE}
+```{r}
 ## Dependencies
 library(Seurat)
 library(dplyr)
@@ -91,7 +98,7 @@ Preprocessing comprises the following steps:
 
 * 2. Features selection
 
-```{r message=FALSE, warning=FALSE, cache=TRUE}
+```{r}
 ## Preprocessing
 brain <- list(adBrcDNA.Seu, p0cDNA.Seu)
 names(brain) <- c('ad_mRNA', 'p0_mRNA')
@@ -108,7 +115,7 @@ for (i in 1:length(brain)){
 Next, we integrate gene expression counts for adult and neonatal brain cells. From the next figure, it can be seen UMAP 
 projection of integrated data sets. Notice, that the different assay groups are clustered together. 
 
-```{r cache=TRUE, warning=FALSE, message=FALSE}
+```{r}
 ## data integration
 brain.anchors <- FindIntegrationAnchors(object.list = brain, 
                                            dims = 1:30)
@@ -124,18 +131,8 @@ brain.integrated <- RunUMAP(brain.integrated, reduction = "pca", dims = 1:30)
 ```
 
 <center>
-```{r, fig.cap='**Data integration of gene expression in adult and neonatal brain single cells data.** Neonatal (p0) and adult (ad) cells are shown in blue and salmon, respectively.', cache=TRUE}
+```{r, fig.cap='**Data integration of gene expression in adult and neonatal brain single cells data.** Neonatal (p0) and adult (ad) cells are shown in blue and salmon, respectively.'}
 DimPlot(brain.integrated, reduction = "umap", group.by = "ident")
-```
-</center>
-
-## Expression of known brain tissue markers
-
-We evaluated the expression of known markers expressed in brain tissue cells. Unc5d and Gadd45g are marker for cycling cells associated to survival mechanisms, whilst Foxp1 and Cux1 are upregulated in upper-layer neurones. 
-
-<center>
-```{r warning=FALSE, message=FALSE, cache=TRUE, fig.cap='**Gene expression of brain markers** in the integrated data of neonatal and adult single cells.'}
-FeaturePlot(brain.integrated, features = c('Unc5d', 'Gadd45g','Foxp1', 'Cux1'))
 ```
 </center>
 
@@ -143,16 +140,45 @@ FeaturePlot(brain.integrated, features = c('Unc5d', 'Gadd45g','Foxp1', 'Cux1'))
 
 Then, a KNN graph based algorithm is used to cluster gene expression patterns. A total of 24 clusters were found using a high value for the `resolution` parameter (=2).
 
-```{r message=FALSE, warning=FALSE, cache=TRUE}
+```{r}
 brain.integrated <- FindNeighbors(brain.integrated, dims = 1:30, verbose = FALSE)
 brain.integrated <- FindClusters(brain.integrated, resolution= 2, verbose = FALSE)
 ```
 
 <center>
-```{r, cache=TRUE, message=FALSE, warning=FALSE}
-DimPlot(brain.integrated, reduction = 'umap', label = TRUE)
+```{r}
+DimPlot(brain.integrated, reduction = 'umap', label = TRUE) + NoLegend()
 ```     
 </center>
+
+## Expression of known brain tissue markers
+
+We evaluated the expression of known markers expressed in brain tissue cells. Unc5d and Gadd45g are marker for cycling cells associated to survival mechanisms, whilst Foxp1 and Cux1 are upregulated in upper-layer neurones. 
+
+<center>
+```{r, fig.cap='**Gene expression of brain markers** in the integrated data of neonatal and adult single cells.'}
+FeaturePlot(brain.integrated, features = c('Unc5d', 'Gadd45g','Foxp1', 'Cux1', 'Hmgm2'))
+```
+</center>
+
+```{r}
+markers <- FindAllMarkers(brain.integrated, 
+                          only.pos = TRUE, 
+                          min.pct = .10, 
+                          logfc.threshold = 0.25)
+```
+
+```{r}
+top.markers <- markers %>% 
+        group_by(cluster) %>% 
+        top_n(n = 1, wt = avg_logFC) 
+```
+
+```{r}
+DoHeatmap(brain.integrated, features = top.markers$gene) + NoLegend()
+```
+
+https://static-content.springer.com/esm/art%3A10.1038%2Fs41587-019-0290-0/MediaObjects/41587_2019_290_MOESM3_ESM.xlsx
 
 **TODO:**
 

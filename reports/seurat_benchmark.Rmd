@@ -148,9 +148,6 @@ FeaturePlot(mixture[[1]],
 
 ```{r}
 
-```
-```{r eval=FALSE}
-
 activity.matrix <- CreateGeneActivityMatrix(peak.matrix = GetAssayData(mixture[[2]], slot='counts'), 
                                             annotation.file = "../data/Homo_sapiens.GRCh37.87.gtf.gz", 
                                             seq.levels = c(1:22, "X", "Y"), 
@@ -162,7 +159,7 @@ mixture.atac[['ACTIVITY']] <- CreateAssayObject(counts = activity.matrix)
 mixture.atac[['tech']] <- 'atac'
 
 DefaultAssay(mixture.atac) <- "ACTIVITY"
-mixture.atac <- FindVariableFeatures(mixture.atac)
+mixture.atac <- FindSVariableFeatures(mixture.atac)
 mixture.atac <- NormalizeData(mixture.atac)
 mixture.atac <- ScaleData(mixture.atac)
 
@@ -173,15 +170,27 @@ mixture.atac <- RunUMAP(mixture.atac, reduction = "lsi", dims = 1:50)
 
 ## needs to find out scATAC Seurat input object
 
-mixture[[1]] <- ScaleData(mixture[[1]])
-mixture[[1]] <- RunLSI(mixture[[1]])
-mixture[[1]] <- RunUMAP(mixture[[1]], reduction = 'lsi', dims = 1:30)
+#mixture[[1]] <- ScaleData(mixture[[1]])
+#mixture[[1]] <- RunLSI(mixture[[1]])
+#mixture[[1]] <- RunUMAP(mixture[[1]], reduction = 'lsi', dims = 1:30)
 
-mixture[[1]] <- SCTransform(mixture[[1]], assay = 'mixCDNA')
+#mixture[[1]] <- SCTransform(mixture[[1]], assay = 'mixCDNA')
 mixture.atac <- SCTransform(mixture.atac, assay = 'ACTIVITY')
 
-anchors <- FindTransferAnchors(reference = mixture[[1]],
-                               query = mixture.atac) 
+mixcDNA.seu <- FindVariableFeatures(mixcDNA.seu,
+                                    selection.method = 'vst') 
+mixcDNA.seu <- NormalizeData(mixcDNA.seu)
+mixcDNA.seu <- SCTransform(mixcDNA.seu, assay = 'mixCDNA')
+
+mixcDNA.seu <- SetAssayData(object = mixcDNA.seu,
+                            slot = 'assaysS', 
+                            new.data = mixcDNA.seu@assays$SCT,
+                            assay = 'RNA')
+
+anchors <- FindTransferAnchors(reference = mixcDNA.seu,
+                               query = mixture.atac,
+                               reference.assay = 'SCT',
+                               query.assay = 'SCT') 
 
 
 ##str(mixture[[2]])

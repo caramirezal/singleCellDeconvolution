@@ -206,3 +206,7 @@ DimPlot(p0_atac,
         label = TRUE) + NoLegend()
 ```
 
+```{r}
+str(p0_atac$preds)
+```
+
