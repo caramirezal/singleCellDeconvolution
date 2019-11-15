@@ -25,6 +25,8 @@ knitr::opts_chunk$set(
 ## dependencies
 library(dplyr)
 library(Seurat)
+library(Matrix)
+library(ggplot2)
 ```
 
 
@@ -52,7 +54,7 @@ p0chr <- Read10X(
 )
 p0chr.Seu <- CreateSeuratObject(
         counts = p0chr,
-        project = 'atac', 
+        project = 'scATAC', 
         min.cells = 1,
         min.features = 1
 )
@@ -79,14 +81,15 @@ p0cDNA.Seu <- RunUMAP(p0cDNA.Seu, reduction = "pca", dims = 1:30)
 
 ## Preprocessing ATAC data
 
-```{r}
-activity.matrix <- CreateGeneActivityMatrix(
-        peak.matrix = GetAssayData(p0chr.Seu, slot='counts'), 
-        annotation.file = "../data/Homo_sapiens.GRCh37.87.gtf", 
-        seq.levels = c(1:22, "X", "Y"), 
-        upstream = 2000, 
-        verbose = TRUE
-)
+```{r, eval=FALSE}
+#activity.matrix <- CreateGeneActivityMatrix(
+#        peak.matrix = GetAssayData(p0chr.Seu, slot='counts'), 
+#        annotation.file = "../data/Mus_musculus.GRCm38.98.gtf.gz", 
+#        seq.levels = c(1:19, "X", "Y", "MT"), 
+#        upstream = 2000, 
+#        verbose = TRUE
+#)
+activity.matrix <- readRDS(file = 'p0_activity.rds')
 ```
 
 ```{r}
@@ -94,7 +97,7 @@ activity.matrix <- CreateGeneActivityMatrix(
 p0_atac <- CreateSeuratObject(
         counts = GetAssayData(p0chr.Seu, slot = 'counts'),
         assay = 'ATAC',
-        project = 'multilayer_integration'
+        project = 'atac'
 )
 ## Adding estimated gene activity matrix
 p0_atac[['activity']] <- CreateAssayObject(
@@ -213,4 +216,66 @@ DimPlot(integrated,
         label = TRUE) + NoLegend() 
 ```
 
+
+
+```{r}
+coembed <- merge(p0_atac, p0cDNA.Seu)
+coembed <- FindVariableFeatures(coembed)
+coembed <- ScaleData(coembed, 
+                     do.scale = FALSE)
+coembed <- RunPCA(coembed, 
+                  verbose = FALSE)
+coembed <- RunUMAP(coembed, dims = 1:30)
+```
+
+## Coembedding test
+
+<center>
+
+```{r}
+coembed$orig.ident <- plyr::mapvalues(
+        coembed$orig.ident,
+        from = unique(coembed$orig.ident),
+        to = c("atac", "gene_expression")
+)
+coembed$'nCount' <- c(
+        coembed$nCount_ATAC[!is.na(coembed$nCount_ATAC)],
+        coembed$nCount_RNA[!is.na(coembed$nCount_RNA)]
+)
+DimPlot(coembed, group.by = 'orig.ident', reduction = 'umap')
+```
+
+```{r}
+DimPlot(coembed, group.by = 'clust_ann', reduction = 'umap')
+```
+
+
+```{r}
+plot1 <- FeatureScatter(p0cDNA.Seu, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+plot2 <- FeatureScatter(p0_atac, feature1 = "nCount_ATAC", feature2 = "nFeature_ATAC")
+plot1
+```
+
+```{r}
+p1 <- VlnPlot(p0_atac, features = 'nCount_ATAC') 
+p2 <- VlnPlot(p0cDNA.Seu, features = 'nCount_RNA')
+p1
+p2
+```
+
+
+```{r}
+library(ggplot2)
+```
+
+```{r}
+counts <- data.frame(
+        'counts' = coembed$nCount,
+        'assay' = coembed$orig.ident
+)
+theme_set(theme_light())
+ggplot(data = counts) + 
+        geom_density(aes(x=counts, fill=assay))
+        
+```
 </center>
