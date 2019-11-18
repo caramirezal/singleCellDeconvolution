@@ -1,0 +1,209 @@
+---
+title: "QC visualization"
+author: "Health Data Science Unit"
+date: "11/18/2019"
+output: 
+    html_document:
+            code_fold: 'hide'
+---
+
+```{r, echo=FALSE}
+knitr::opts_chunk$set(warning = FALSE,
+                      message = FALSE,
+                      cache = TRUE)
+```
+
+```{r}
+## Dependencies
+library(Seurat)
+library(dplyr)
+library(ggplot2)
+library(gridExtra)
+```
+
+## Loading the data into R
+
+```{r}
+#############################################################################################
+
+## Loading data into R
+
+#########################################################################################
+## Adult brain cells
+
+## Loading Adult brain cortex mRNA quantified transcripts
+cDNADir <- '../data/chenS2019sameCellsData/GSE126074_AdBrainCortex_SNAREseq_cDNA/'
+adBrcDNA <- Read10X(data.dir = cDNADir, 
+                    gene.column = 1      ## necessary parameter, otherwise runs error
+                    )
+adBrcDNA.Seu <- CreateSeuratObject(counts = adBrcDNA,
+                                   project = 'ad_mRNA', 
+                                   min.cells = 10,
+                                   min.features = 500)
+
+## Embryonic cells 
+## GSE126074_P0_BrainCortex mRNA
+cDNADir <- '../data/chenS2019sameCellsData/GSE126074_P0_BrainCortex_SNAREseq_cDNA/'
+p0cDNA <- Read10X(data.dir = cDNADir, 
+                            gene.column = 1      ## necessary parameter, otherwise runs error
+        )
+p0cDNA.Seu <- CreateSeuratObject(counts = p0cDNA,
+                                 project = 'p0_mRNA', 
+                                 min.cells = 10,
+                                 min.features = 500)
+
+## Loading Adult brain cortex chromatin accesibility reads
+chrDir <- '../data/chenS2019sameCellsData/GSE126074_AdBrainCortex_SNAREseq_chromatin/'
+adBrchr <- Read10X(data.dir = chrDir, 
+                    gene.column = 1      ## necessary parameter, otherwise runs error
+                    )
+adBrchr.Seu <- CreateSeuratObject(counts = adBrchr,
+                                   project = 'ad_chr', 
+                                   min.cells = 10,
+                                   min.features = 500)
+
+## Loading Adult brain cortex chromatin accesibility reads
+p0chrDir <- '../data/chenS2019sameCellsData/GSE126074_P0_BrainCortex_SNAREseq_chromatin/'
+p0Brchr <- Read10X(data.dir = p0chrDir, 
+                    gene.column = 1      ## necessary parameter, otherwise runs error
+                    )
+p0Brchr.Seu <- CreateSeuratObject(counts = p0Brchr,
+                                   project = 'p0_chr', 
+                                   min.cells = 10,
+                                   min.features = 500)
+
+Idents(adBrcDNA.Seu) <- rep('ad_mRNA', nrow(adBrcDNA.Seu))
+Idents(p0cDNA.Seu) <- rep('p0_mRNA', nrow(p0cDNA.Seu))
+
+##############################################################################################
+## Cells Mixture cDNA
+mixcDNA <- read.table('../data/chenS2019sameCellsData/GSE126074_CellLineMixture_SNAREseq_cDNA_counts.tsv',
+                      sep = '\t',
+                      stringsAsFactors = FALSE) 
+mixcDNA.seu <- CreateSeuratObject(counts = mixcDNA, 
+                                  assay = 'mixCDNA')
+
+##############################################################################################
+
+## Cells Mixture chromatin
+mixchr <- read.table('../data/chenS2019sameCellsData/GSE126074_CellLineMixture_SNAREseq_chromatin_counts.tsv',
+                      sep = '\t',
+                      stringsAsFactors = FALSE) 
+mixchr.Seu <- CreateSeuratObject(counts = mixchr,
+                                 assay = 'mixChr')
+```
+
+
+## QC 
+
+
+### Number of counts and features
+
+```{r}
+## create dataframe
+create_df <- function(counts, tag) {
+        df <- data.frame(
+        'quant'= counts,
+        'data_set'= rep(tag, length(counts))
+        )
+        return(df)
+}
+
+## merging dataframes with metadata
+merge_df <- function(counts_list, tags_list){
+        merge <- data.frame()
+        for (i in 1:length(counts_list)){
+                formated_df <- create_df(counts_list[[i]],
+                                         tags_list[[i]])
+                merge <- rbind(merge, formated_df)
+        }
+        return(merge)
+}
+
+## extract counts
+counts_list <- list(p0Brchr.Seu$nCount_RNA, 
+                    p0Brchr.Seu$nFeature_RNA,
+                    p0cDNA.Seu$nCount_RNA,
+                    p0cDNA.Seu$nFeature_RNA,
+                    adBrchr.Seu$nCount_RNA,
+                    adBrchr.Seu$nFeature_RNA,
+                    adBrcDNA.Seu$nCount_RNA,
+                    adBrcDNA.Seu$nFeature_RNA,
+                    mixchr.Seu$nCount_mixChr,
+                    mixchr.Seu$nFeature_mixChr,
+                    mixcDNA.seu$nCount_mixCDNA,
+                    mixcDNA.seu$nFeature_mixCDNA)
+tags_list <- list('p0_chr_nCounts',
+                  'p0_chr_nFeatures',
+                  'p0_mRNA_nCounts',
+                  'p0_mRNA_nFeatures',
+                  'ad_chr_nCounts',
+                  'ad_chr_nFeatures',
+                  'ad_mRNA_nCounts',
+                  'ad_mRNA_nFeatures',
+                  'cl_chr_nCounts',
+                  'cl_chr_nFeatures',
+                  'cl_mRNA_nCounts',
+                  'cl_mRNA_nFeatures')
+qc <- merge_df(counts_list, tags_list)
+
+theme_set(theme_light())
+g1 <- qc %>% 
+        filter(grepl('p0', as.character(data_set))) %>%
+           ggplot(aes(x=data_set, y=quant, fill=data_set)) +
+              geom_violin() + 
+                NoLegend() + 
+                theme(axis.text.x = element_text(angle = 45, hjust = 1),
+                      axis.title.x = element_blank(),
+                      axis.title.y = element_text(face = 'bold',
+                                                  size = 18)) +
+                ylab('Counts')
+
+g2 <- qc %>% 
+        filter(grepl('ad', as.character(data_set))) %>%
+           ggplot(aes(x=data_set, y=quant, fill=data_set)) +
+              geom_violin() + 
+                NoLegend() + 
+                theme(axis.text.x = element_text(angle = 45, hjust = 1),
+                      axis.title.x = element_blank(),
+                      axis.title.y = element_blank()) 
+
+g3 <- qc %>% 
+        filter(grepl('cl', as.character(data_set))) %>%
+           ggplot(aes(x=data_set, y=quant, fill=data_set)) +
+              geom_violin() + 
+                NoLegend() + 
+                theme(axis.text.x = element_text(angle = 45, hjust = 1),
+                      axis.title.x = element_blank(),
+                      axis.title.y = element_blank()) 
+
+grid.arrange(g1, g2, g3, nrow = 1)
+```
+
+```{r}
+adBrchr.Seu$orig.ident <- rep('ad_chr', ncol(adBrchr.Seu))
+Idents(adBrchr.Seu) <- 'orig.ident'
+mixchr.Seu$orig.ident <- rep('cl_chr', ncol(mixchr.Seu))
+Idents(mixchr.Seu) <- 'orig.ident'
+mixcDNA.seu$orig.ident <- rep('cl_mRNA', ncol(mixcDNA.seu))
+Idents(mixcDNA.seu) <- 'orig.ident'
+seurat_list <- list(p0Brchr.Seu, p0cDNA.Seu, 
+                    adBrchr.Seu, adBrcDNA.Seu)
+plots <- lapply(seurat_list, 
+                       function(x) FeatureScatter(x, 
+                                                  feature1 = 'nCount_RNA', 
+                                                  feature2 = 'nFeature_RNA') + 
+                                       xlab('counts') + ylab('features')
+                )
+
+
+
+cl_chr <- FeatureScatter(mixchr.Seu, feature1 = 'nCount_mixChr', feature2 = 'nFeature_mixChr') +
+                 xlab('counts') + ylab('features')
+cl_rna <- FeatureScatter(mixcDNA.seu, feature1 = 'nCount_mixCDNA', feature2 = 'nFeature_mixCDNA') +
+                 xlab('counts') + ylab('features')
+plots[[5]] <- cl_chr
+plots[[6]] <- cl_rna
+
+CombinePlots(plots = plots, ncol = 2)
+```
