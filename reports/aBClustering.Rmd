@@ -86,89 +86,29 @@ adBr_mRNA <- seurat_pipe_10x(
 ```
 
 ```{r}
-DimPlot(adBr_mRNA, reduction = 'umap', group.by = 'annotations')
+DimPlot(adBr_mRNA, reduction = 'umap', group.by = 'annotations', label = TRUE) +
+        NoLegend()
 ```
 
 
-## Preprocessing ATAC data
+
 
 ```{r}
-seurat_pipe_atac <- function(
-        data_dir = '.',
-        n_features = 3000,
-        annotation_file = '.',
-        seq_levels = c(1:19, 'X','Y')
-){
-       cat('Loading data \n')
-       seurat_pipe_data <- Read10X(data.dir = data_dir,
-                                   gene.column = 1)
-       seurat_pipe <- CreateSeuratObject(
-                                   counts = seurat_pipe_data,
-                                   project = 'ad_chr',
-                                   min.features = 1,
-                                   min.cells = 1
-                        )
-       
-       cat('Feature selection of ', n_features,' most variables features\n')
-       seurat_pipe <- FindVariableFeatures(seurat_pipe) %>% 
-                        subset(features = 1:n_features)
-       
-       cat('Calculating activity matrix from peaks counts\n')
-       activity.matrix <- CreateGeneActivityMatrix(
-                            peak.matrix = GetAssayData(seurat_pipe), 
-                            annotation.file = annotation_file, 
-                            seq.levels = seq_levels, 
-                            upstream = 2000, 
-                            verbose = TRUE)
-       
-       cat('Setting the Seurat object containing scATAC counts\n')
-       atac_seurat <- CreateSeuratObject(
-                        counts = GetAssayData(seurat_pipe, slot = 'counts'),
-                        assay = 'ATAC',
-                        project = 'atac'
-                 )
-       
-       cat('Adding estimated gene activity matrix\n')
-       atac_seurat[['activity']] <- CreateAssayObject(counts = activity.matrix)
+## adding metadata to ATAC data from gene expression labels
 
-       return(atac_seurat)
-}
-## Loading Adult brain cortex chromatin accesibility reads
-chrDir <- '../data/chenS2019sameCellsData/GSE126074_AdBrainCortex_SNAREseq_chromatin/'
-ann_file_path <- "../data/Mus_musculus.GRCm38.98.gtf.gz"
-ad_br_chr <- seurat_pipe_atac(data_dir = chrDir,
-                              annotation_file = ann_file_path)
+## getting the order in which cells appears in ATAC data
+ord <- match(colnames(ad_br_chr), 
+         colnames(adBr_mRNA)) 
+ad_br_chr[['clust_ann']] <- adBr_mRNA$annotations[ord] 
+```
 
-#activity.matrix <- readRDS(file = 'p0_activity.rds')
+
+```{r}
+DimPlot(ad_br_chr, group.by = 'clust_ann', label = TRUE) + NoLegend() 
 ```
 
 ```{r}
 
-st_workflow <- function(
-        seurat_object,
-        n_features = 3000,
-        n_pca_dims = 15
-){
-        cat('Normalizing and finding variable features\n')
-        seurat.p <- NormalizeData(seurat_object) %>%
-                         FindVariableFeatures(selection.method = 'vst',
-                                              nfeatures = n_features)
-        cat('Scaling and projection\n')
-        seurat.p <- ScaleData(seurat.p, 
-                              verbose = FALSE) %>% 
-                            RunPCA(npcs = n_pca_dims, 
-                                   verbose = FALSE) %>%
-                              RunUMAP(reduction = "pca", 
-                                      dims = 1:10) 
-        return(seurat.p)
-}
-
 ```
-
-```{r}
-ad_br_chr <- st_workflow(ad_br_chr)
-```
-
-
 
 
