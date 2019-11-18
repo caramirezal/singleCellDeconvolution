@@ -25,7 +25,7 @@ adBrchr <- Read10X(data.dir = chrDir,
                     gene.column = 1      ## necessary parameter, otherwise runs error
                     )
 adBrchr.Seu <- CreateSeuratObject(counts = adBrchr,
-                                   project = 'sameCellsData', 
+                                   project = 'ad_chr', 
                                    min.cells = 1,
                                    min.features = 1)
 ```
@@ -90,25 +90,19 @@ DimPlot(adBr_mRNA, reduction = 'umap', group.by = 'annotations', label = TRUE) +
         NoLegend()
 ```
 
-
-
-
 ```{r}
-## adding metadata to ATAC data from gene expression labels
-
-## getting the order in which cells appears in ATAC data
-ord <- match(colnames(ad_br_chr), 
-         colnames(adBr_mRNA)) 
-ad_br_chr[['clust_ann']] <- adBr_mRNA$annotations[ord] 
+adBrchr_sub <- subset(adBrchr.Seu, features = 1:50)
+adBrchr_sub
+activity.matrix <- CreateGeneActivityMatrix(
+        peak.matrix = GetAssayData(adBrchr.Seu, slot='counts'), 
+                annotation.file = "../data/Mus_musculus.GRCm38.98.gtf.gz", 
+        seq.levels = c(1:19, "X", "Y"), 
+        upstream = 2000, 
+        verbose = TRUE
+)
 ```
 
 
-```{r}
-DimPlot(ad_br_chr, group.by = 'clust_ann', label = TRUE) + NoLegend() 
-```
 
-```{r}
-
-```
 
 
