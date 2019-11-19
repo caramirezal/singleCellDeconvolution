@@ -146,7 +146,7 @@ FeaturePlot(mixture[[1]],
 
 ## Information transference
 
-```{r, eval=FALSE}
+```{r}
 
 activity.matrix <- CreateGeneActivityMatrix(peak.matrix = GetAssayData(mixture[[2]], slot='counts'), 
                                             annotation.file = "../data/Homo_sapiens.GRCh37.87.gtf", 
@@ -183,7 +183,7 @@ mixcDNA.seu <- NormalizeData(mixcDNA.seu)
 mixcDNA.seu <- SCTransform(mixcDNA.seu, assay = 'mixCDNA')
 
 mixcDNA.seu <- SetAssayData(object = mixcDNA.seu,
-                            slot = 'assays', 
+                            slot = 'assaysS', 
                             new.data = mixcDNA.seu@assays$SCT,
                             assay = 'RNA')
 
