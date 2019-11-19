@@ -1,0 +1,188 @@
+---
+title: "Cell lines data integration"
+author: "Health Data Science Unit"
+date: "11/19/2019"
+output: 
+    html_document:
+            code_fold: 'hide'
+---
+
+
+
+
+```{r echo=FALSE}
+## set defaults settings for chunks
+knitr::opts_chunk$set(cache=TRUE, 
+                      message=FALSE, 
+                      warning=FALSE)
+```
+
+```{r}
+## dependencies
+library(Seurat)
+library(dplyr)
+
+source('../sc/pipeline.R')
+```
+
+```{r}
+##############################################################################################
+## Cells Mixture cDNA
+mixcDNA <- read.table('../data/chenS2019sameCellsData/GSE126074_CellLineMixture_SNAREseq_cDNA_counts.tsv',
+                      sep = '\t',
+                      stringsAsFactors = FALSE) 
+mixcDNA.seu <- CreateSeuratObject(counts = mixcDNA, 
+                                  assay = 'mixCDNA')
+
+##############################################################################################
+
+## Cells Mixture chromatin
+mixchr <- read.table('../data/chenS2019sameCellsData/GSE126074_CellLineMixture_SNAREseq_chromatin_counts.tsv',
+                      sep = '\t',
+                      stringsAsFactors = FALSE) 
+mixchr.Seu <- CreateSeuratObject(counts = mixchr,
+                                 assay = 'mixChr')
+
+```
+
+## Clustering mixture cells
+
+```{r}
+## Preprocessing
+mixture <- list(mixcDNA.seu, mixchr.Seu)
+names(mixture) <- c('mix_mRNA', 'mix_chr')
+for (i in 1:length(mixture)){
+        mixture[[i]] <- NormalizeData(mixture[[i]])
+        mixture[[i]] <- FindVariableFeatures(mixture[[i]], 
+                                              selection.method = 'vst',
+                                              nfeatures = 1000)
+}
+```
+
+```{r}
+mixture$mix_mRNA <- ScaleData(mixture$mix_mRNA, verbose = FALSE)
+mixture[[1]] <- RunPCA(mixture[[1]], npcs = 30, verbose = FALSE)
+mixture[[1]] <- RunUMAP(mixture[[1]], reduction = "pca", dims = 1:30)
+mixture[[1]] <- FindNeighbors(mixture[[1]], dims = 1:30, verbose = FALSE)
+mixture[[1]] <- FindClusters(mixture[[1]], resolution= 0.5, verbose = FALSE)
+```
+
+```{r, fig.cap='**Clustering of the mRNA single cell data**. Cell labels were assigned according to the expression of cell lines markers.'}
+## Assignation of cluster names
+cell_labs <- plyr::mapvalues(x=mixture[[1]]$seurat_clusters,
+                from=c(0,1,2,3),
+                to=c('H1', 'BJ', 'K562', 'GM12878'))
+mixture[[1]][['cell_labs']] <- cell_labs
+
+``` 
+
+
+## Expression of cell lines markers
+
+
+```{r, fig.cap='**Evaluation of the expression of markers**. '}
+VlnPlot(mixture[[1]], 
+        features = c('JUN', 'IRF8','POU5F1', 'GATA1'),
+        ncol = 2)
+```
+
+
+## UMAP projection of identified clusters
+
+```{r fig.cap='**UMAP projection of the clusters obtained using KNN graph method**. Four groups can be observed which were labeled according to the corresponding expression of cell line markers.'}
+DimPlot(mixture[[1]], 
+        reduction = 'umap', 
+        label = TRUE, 
+        group.by = 'cell_labs') + 
+            NoLegend()
+```
+
+```{r fig.cap='**Expression of known markers in clusters** as visualized using UMAP projection.'}
+FeaturePlot(mixture[[1]], 
+            features = c('JUN', 'IRF8','POU5F1', 'GATA1'))
+```
+
+
+
+## Process ATAC data
+
+```{r}
+activity.matrix <- CreateGeneActivityMatrix(
+        peak.matrix = GetAssayData(mixture[[2]], slot='counts'), 
+                annotation.file = "../data/Homo_sapiens.GRCh38.98.gtf.gz", 
+        seq.levels = c(1:22, "X", "Y"), 
+        upstream = 2000, 
+        verbose = TRUE
+)
+```
+
+
+```{r}
+## creation of the Seurat object containing scATAC counts
+cl_atac <- CreateSeuratObject(
+        counts = GetAssayData(mixture[[2]], slot = 'counts'),
+        assay = 'ATAC',
+        project = 'atac'
+)
+## Adding estimated gene activity matrix
+cl_atac[['activity']] <- CreateAssayObject(
+        counts = activity.matrix
+)
+```
+
+
+```{r}
+## cell annotation
+ord <- match(colnames(cl_atac),
+             colnames(mixture[[1]]))
+cl_atac[['clust_ann']] <- mixture[[1]]$cell_labs[ord]
+```
+
+```{r}
+## standard workflow
+DefaultAssay(cl_atac) <- 'activity'
+cl_atac <- st_workflow(cl_atac)
+```
+
+```{r}
+DimPlot(cl_atac, reduction = 'umap', group.by = 'clust_ann')
+```
+
+## Data integration
+
+```{r}
+mixture[[1]]$'clust_ann' <- mixture[[1]]$cell_labs
+cl_list <- list(mixture[[1]], cl_atac)
+anchors <- FindIntegrationAnchors(cl_list, dims = 1:20)
+```
+
+```{r}
+integrated <- IntegrateData(anchorset = anchors,
+                                     dims = 1:20)
+
+# Visualisation of the integrated data
+DefaultAssay(integrated) <- "integrated"
+integrated <- ScaleData(integrated, 
+                        verbose = FALSE)
+integrated <- RunPCA(integrated, 
+                     npcs = 30, 
+                     verbose = FALSE)
+integrated <- RunUMAP(integrated, 
+                      reduction = "pca", 
+                      dims = 1:30)
+```
+
+## Integrated gene expression + ATAC datasets
+
+```{r}
+integrated$'datasets' <- sapply(integrated$orig.ident, function(x)
+                                ifelse( x == "SeuratProject" , 'mRNA', x))
+DimPlot(integrated, group.by = 'datasets', reduction = 'umap', 
+        label = FALSE)
+```
+
+```{r}
+DimPlot(integrated, group.by = 'clust_ann', reduction = 'umap', label = TRUE) + NoLegend()
+```
+
+
