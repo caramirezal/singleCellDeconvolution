@@ -69,7 +69,7 @@ seurat_pipe_10x <- function(
                            RunPCA(npcs = pca_dims, 
                                   verbose = FALSE) %>%
                            RunUMAP(reduction = "pca", 
-                                   dims = 1:15)
+                                   dims = 1:pca_dims)
         
         return(seurat_pipe)
 }
