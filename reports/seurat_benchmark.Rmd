@@ -146,10 +146,10 @@ FeaturePlot(mixture[[1]],
 
 ## Information transference
 
-```{r}
+```{r, eval=FALSE}
 
 activity.matrix <- CreateGeneActivityMatrix(peak.matrix = GetAssayData(mixture[[2]], slot='counts'), 
-                                            annotation.file = "../data/Homo_sapiens.GRCh37.87.gtf.gz", 
+                                            annotation.file = "../data/Homo_sapiens.GRCh37.87.gtf", 
                                             seq.levels = c(1:22, "X", "Y"), 
                                             upstream = 2000, verbose = TRUE)
 mixture.atac <- CreateSeuratObject(counts = GetAssayData(mixture[[2]], slot='counts'),
@@ -159,7 +159,7 @@ mixture.atac[['ACTIVITY']] <- CreateAssayObject(counts = activity.matrix)
 mixture.atac[['tech']] <- 'atac'
 
 DefaultAssay(mixture.atac) <- "ACTIVITY"
-mixture.atac <- FindSVariableFeatures(mixture.atac)
+mixture.atac <- FindVariableFeatures(mixture.atac)
 mixture.atac <- NormalizeData(mixture.atac)
 mixture.atac <- ScaleData(mixture.atac)
 
@@ -183,7 +183,7 @@ mixcDNA.seu <- NormalizeData(mixcDNA.seu)
 mixcDNA.seu <- SCTransform(mixcDNA.seu, assay = 'mixCDNA')
 
 mixcDNA.seu <- SetAssayData(object = mixcDNA.seu,
-                            slot = 'assaysS', 
+                            slot = 'assays', 
                             new.data = mixcDNA.seu@assays$SCT,
                             assay = 'RNA')
 
