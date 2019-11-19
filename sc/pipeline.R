@@ -123,7 +123,7 @@ st_workflow <- function(
                 RunPCA(npcs = n_pca_dims, 
                        verbose = FALSE) %>%
                 RunUMAP(reduction = "pca", 
-                        dims = 1:10) 
+                        dims = 1:n_pca_dims) 
         return(seurat.p)
 }
 ## Example:
