@@ -83,6 +83,7 @@ adBr_mRNA <- seurat_pipe_10x(
         projectName = 'mRNA',
         annotations = metadata$Ident
 )
+adBr_mRNA$'clust_ann' <- adBr_mRNA$annotations
 ```
 
 ```{r}
@@ -91,10 +92,11 @@ DimPlot(adBr_mRNA, reduction = 'umap', group.by = 'annotations', label = TRUE) +
 ```
 
 ```{r}
-adBrchr_sub <- subset(adBrchr.Seu, features = 1:50)
+#adBrchr_sub <- subset(adBrchr.Seu, features = 1:1000)
+adBrchr_sub <- subset(adBrchr.Seu, cells = sample(Cells(adBrchr.Seu), 3000))
 adBrchr_sub
 activity.matrix <- CreateGeneActivityMatrix(
-        peak.matrix = GetAssayData(adBrchr.Seu, slot='counts'), 
+        peak.matrix = GetAssayData(adBrchr_sub, slot='counts'), 
                 annotation.file = "../data/Mus_musculus.GRCm38.98.gtf.gz", 
         seq.levels = c(1:19, "X", "Y"), 
         upstream = 2000, 
@@ -102,7 +104,95 @@ activity.matrix <- CreateGeneActivityMatrix(
 )
 ```
 
+```{r}
+## Adding estimated gene activity matrix
+adBrchr_sub[['activity']] <- CreateAssayObject(
+        counts = activity.matrix
+)
+## setting activity as default data
+DefaultAssay(adBrchr_sub) <- 'activity'
+## Normalization
+adBrchr_sub <- FindVariableFeatures(adBrchr_sub) %>%
+              NormalizeData() %>%
+                ScaleData()
+```
 
 
 
+```{r}
+DefaultAssay(adBrchr_sub) <- 'activity'
+adBrchr_sub <- adBrchr_sub %>% 
+                  ScaleData(verbose = FALSE) %>% 
+                   RunPCA(npcs = 10, verbose = FALSE) %>%
+                    RunUMAP(reduction = "pca", dims = 1:10, metric = 'cosine')
+#VariableFeatures(adBrchr_sub) <- names(which(Matrix::rowSums(adBrchr_sub) > 100))
+#adBrchr_sub <- RunLSI(adBrchr_sub, n = 50, scale.max = NULL)
+adBrchr_sub <- RunUMAP(adBrchr_sub, reduction = "pca", dims = 1:10)
+```
 
+```{r}
+adBrchr_sub[['id']] <- gsub('.*_', '', colnames(adBrchr_sub))
+ord <- match(adBrchr_sub$id, metadata$Barcode)
+adBrchr_sub[['clust_ann']] <- metadata$Ident[ord]
+```
+
+```{r}
+DimPlot(adBrchr_sub, group.by = 'clust_ann', reduction = 'umap')
+```
+
+```{r}
+anchors <- FindTransferAnchors(
+        reference = adBr_mRNA,
+        query = adBrchr_sub, 
+        reduction = 'cca'
+)
+```
+
+```{r}
+ad_list <- list(adBr_mRNA, adBrchr_sub)
+anchors <- FindIntegrationAnchors(ad_list, dims = 1:20)
+```
+
+```{r}
+integrated <- IntegrateData(anchorset = anchors,
+                                     dims = 1:20)
+
+# Visualisation of the integrated data
+DefaultAssay(integrated) <- "integrated"
+integrated <- ScaleData(integrated, 
+                        verbose = FALSE)
+integrated <- RunPCA(integrated, 
+                     npcs = 30, 
+                     verbose = FALSE)
+integrated <- RunUMAP(integrated, 
+                      reduction = "pca", 
+                      dims = 1:30)
+```
+
+## Gene expression + ATAC data integration (manual annotation)
+
+```{r}
+DimPlot(integrated, 
+        reduction = "umap", 
+        group.by = "clust_ann",
+        label = TRUE) + NoLegend()  
+```
+
+## Gene expression + ATAC data integration (group by data type)
+
+```{r}
+integrated[['data_set']] <- sapply(integrated$annotations, 
+                                   function(x) ifelse(is.na(x), 'atac', 'rna'))
+DimPlot(integrated, 
+        reduction = "umap", 
+        group.by = "data_set",
+        label = TRUE) + NoLegend()  
+```
+
+
+```{r}
+DimPlot(integrated, 
+        reduction = "pca", 
+        group.by = "clust_ann",
+        label = FALSE) 
+```
