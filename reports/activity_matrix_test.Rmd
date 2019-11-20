@@ -1,0 +1,61 @@
+---
+title: "Testing actitvity matrix construction"
+author: "Health Data Science Unit"
+date: "11/20/2019"
+output: 
+    html_document:
+            code_folding: 'hide'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE,
+                      warning = FALSE,
+                      cache = TRUE)
+```
+
+
+```{r}
+library(Seurat)
+library(cisTopic)
+```
+## Loading data
+
+
+```{r cars}
+## Loading Adult brain cortex chromatin accesibility reads
+chrDir <- '../data/chenS2019sameCellsData/GSE126074_AdBrainCortex_SNAREseq_chromatin/'
+adBrchr <- Read10X(
+        data.dir = chrDir, 
+        gene.column = 1
+)
+```
+```{r}
+library(ggplot2)
+library(plotly)
+library(sc)
+library(umap)
+
+set.seed(3333)
+
+## subsampling
+sub_sample <- sample(1:ncol(adBrchr), size = 3000)
+adBrchr.sub <- adBrchr[, sub_sample]
+str(adBrchr.sub)
+cisTopicObject <- createcisTopicObject(adBrchr.sub, project.name = 'ad_br_atac')
+cisTopicObject <- runModels(cisTopicObject, topic=seq(20,30,by=5), seed=987, nCores=3, burnin = 100, iterations = 200)
+logLikelihoodByIter(cisTopicObject)
+cisTopicObject <- selectModel(cisTopicObject)
+cisTopicObject <- runtSNE(cisTopicObject, target='cell', perplexity=50, check_duplicates=FALSE)
+#plotFeatures(cisTopicObject, method='tSNE2', topic_contr=NULL, color='black', target = 'cell',
+#             cex.legend = 0.3, factor.max=1, dim=2, legend=TRUE, intervals=20)
+cisTopicObject <- runUmap(cisTopicObject, target='cell')
+#plotFeatures(cisTopicObject, method='Umap', target='cell', topic_contr='Probability', colorBy=NULL, cex.legend = 0.8, factor.max=.75, dim=2, legend=TRUE)
+
+Ad.chromatin.tsne=cisTopicObject@dr$cell$Umap
+Ad.chromatin.tsne=as.data.frame(Ad.chromatin.tsne)
+Ad.metadata.df=readRDS("AdBrainCortex_SNAREseq_metadata.rds")
+
+ggplot(data=Ad.chromatin.tsne, aes(x=tSNE1, y=tSNE2, colour=Ad.metadata.df$Ident[sub_sample])) + geom_point()
+
+```
+
