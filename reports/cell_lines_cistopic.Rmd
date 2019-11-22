@@ -1,0 +1,124 @@
+---
+title: "Neonatal brain data clustering using cistopic"
+author: "Health Data Science Unit"
+date: "11/21/2019"
+output: 
+    html_document:
+            code_folding: 'hide'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+        message = FALSE,
+        warning = FALSE,
+        cache = TRUE
+)
+```
+
+```{r dependencies}
+## Dependencies
+library(Matrix)
+library(cisTopic)
+library(ggplot2)
+library(dplyr)
+```
+        
+## Loading data
+
+```{r loading}
+## Cells Mixture chromatin
+Ad.chromatin.data <- read.table('../data/chenS2019sameCellsData/GSE126074_CellLineMixture_SNAREseq_chromatin_counts.tsv',
+                      sep = '\t',
+                      stringsAsFactors = FALSE) 
+```
+
+
+```{r filtering}
+peak.sum=rowSums(Ad.chromatin.data)
+
+## Selects number of peaks bigger than 5 and less than 10 percent of 
+## the number of cells
+max.ratio=0.01
+min.peak=5
+peak.selected=rownames(Ad.chromatin.data)[peak.sum<ceiling(ncol(Ad.chromatin.data)*max.ratio) & peak.sum>min.peak]
+```
+
+```{r binarization}
+Ad.chromatin.data=Ad.chromatin.data[peak.selected,]
+Ad.chromatin.data[Ad.chromatin.data>1]=1
+```
+
+```{r cis_object}
+cisTopicObject <- createcisTopicObject(Ad.chromatin.data, project.name='AdBrCortex_accessibility')
+#Ad.metadata.df=readRDS("P0BrainCortex_SNAREseq_metadata_full.rds") %>%
+#                   mutate_if(is.factor, as.character)
+#cisTopicObject <- addCellMetadata(cisTopicObject, cell.data = Ad.metadata.df)
+```
+
+```{r run}
+cisTopicObject <- runModels(
+        cisTopicObject, 
+        topic=seq(20,30,by=5), 
+        seed=987, 
+        nCores=3, 
+        burnin = 100, 
+        iterations = 200
+)
+```
+
+```{r selection}
+logLikelihoodByIter(cisTopicObject)
+cisTopicObject <- selectModel(cisTopicObject)
+```
+
+```{r tsne}
+cisTopicObject <- runtSNE(
+        cisTopicObject, 
+        target='cell', 
+        perplexity=50, 
+        check_duplicates=FALSE
+)
+```
+
+```{r annotation}
+meta <- read.table('../data/cell_lines_metadata.tsv', header = TRUE, sep = '\t', stringsAsFactors = FALSE)
+Ad.chromatin.tsne=cisTopicObject@dr$cell$tSNE
+Ad.chromatin.tsne=as.data.frame(Ad.chromatin.tsne)
+Ad.chromatin.tsne$'Barcode' <- rownames(Ad.chromatin.tsne)
+tsne <- merge(Ad.chromatin.tsne, meta)
+tsne %>% head()
+#Ad.chromatin.tsne$Ident=as.character(Ad.metadata.df$"IdentChar")
+```
+
+<center>
+```{r vis}
+theme_set(theme_light())
+tsne %>%
+        #filter(Ident != 'Mis') %>%
+           ggplot(aes(x=tSNE1, y=tSNE2, color=Ident
+                      )) +
+                geom_point(alpha=0.3) #+scale_color_manual(values = alpha(cols, 0.7))
+```
+</center>
+
+```{r umap}
+cisTopicObject <- runUmap(cisTopicObject, target = 'cell')
+```
+
+
+<center>
+```{r}
+theme_set(theme_light())
+umap.df <- as.data.frame(cisTopicObject@dr$cell$Umap)
+umap.df$'Barcode' <- rownames(umap.df)
+umap.df <- merge(umap.df, meta)
+umap.df %>%
+        #filter(Ident != 'Mis') %>%
+        ggplot(aes(x=UMAP1, y=UMAP2, color=Ident)) +
+             geom_point(alpha=0.3)
+```
+</center>
+
+```{r cell_states}
+modelMatSelection(cisTopicObject, 'cell', 'Probability') %>% t() %>% as.data.frame() %>% dim()
+```
