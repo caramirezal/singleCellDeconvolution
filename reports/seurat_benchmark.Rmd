@@ -133,6 +133,17 @@ DimPlot(mixture[[1]],
 ```
 </center>
 
+```{r}
+## saving metadata
+meta <- data.frame(
+        'Barcode' = colnames(mixture[[1]]),
+        'Ident' = mixture[[1]]$cell_labs, 
+        stringsAsFactors = FALSE
+)
+meta %>% write.table(file = '../data/cell_lines_metadata.tsv',
+                     sep = '\t', row.names = FALSE)
+```
+
 However, from the next visualization it can be seen that the expression of the markers
 in each cluster is heterogenous.
 
