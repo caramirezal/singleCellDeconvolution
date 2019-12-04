@@ -1,0 +1,55 @@
+---
+title: "NMF_implementation"
+author: "Health Data Science Unit"
+date: "`r date()`"
+output: 
+   html_document:
+           code_fold: hide
+---
+
+
+```{r settings}
+knitr::opts_chunk$set(
+        cache = TRUE,
+        warning = FALSE,
+        message = FALSE
+)
+```
+
+
+```{r dependencies}
+library(dplyr)
+library(Bratwurst)
+library(reticulate)
+use_condaenv('base')
+```
+
+## Loading data
+
+```{r loading}
+int.norm.mat <- readRDS("../data/Corces_NMF/data/multiview/multiview_norm_mat_list.RDS")
+int.annotation <- readRDS("../data/Corces_NMF/data/multiview/multiview_annotation.RDS")
+```
+
+## Run NMF
+
+```{r bratwurst}
+outer.iter <- 5
+inner.iter <- 2*10^4
+
+## running nmf
+int.nmf.exp <- run_integrative_NMF_tensor(int.norm.mat,
+                                          k_min = 3, 
+                                          k_max = 3, 
+                                          outer_iter = outer.iter, 
+                                          inner_iter = inner.iter, 
+                                          conver_stop_threshold = 40, 
+                                          lambda=0.7
+                                          )  
+```
+
+```{r}
+sessionInfo()
+```
+
+
