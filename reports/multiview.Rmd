@@ -1,0 +1,134 @@
+---
+title: "Multiview Benchmark"
+author: "Health Data Science Unit"
+date: "`r date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, 
+                      message = FALSE, 
+                      cache = TRUE)
+
+```
+
+```{r dependencies}
+library(dplyr)
+library(multiview)
+library(Seurat)
+library(Matrix)
+```
+
+## Loading p0 brain cells data
+
+```{r data_loading}
+## paths
+#mtxDir <- "../data/chenS2019sameCellsData/GSE126074_P0_BrainCortex_SNAREseq_cDNA/matrix.mtx"
+#barcodesDir <- "../data/chenS2019sameCellsData/GSE126074_P0_BrainCortex_SNAREseq_cDNA/barcodes.tsv"
+#peaksDir <- "../data/chenS2019sameCellsData/GSE126074_P0_BrainCortex_SNAREseq_cDNA/genes.tsv"
+## Loading data
+#rna=readMM(mtxDir)
+#colnames(rna)=as.character(unlist(read.table(barcodesDir)))
+#rownames(rna)=as.character(unlist(read.table(peaksDir)))
+
+## metadata
+metadata=readRDS("P0BrainCortex_SNAREseq_metadata_full.rds") %>%
+                   mutate_if(is.factor, as.character)
+```
+
+## Gene expression clustering with Seurat
+
+```{r}
+#rna.seu <- CreateSeuratObject(counts = rna, 
+#                                  assay = 'rna')
+## Preprocessing
+#rna.seu <- NormalizeData(rna.seu)
+#rna.seu <- FindVariableFeatures(rna.seu, 
+#                                     selection.method = 'vst',
+#                                     nfeatures = 1000)
+#rna.seu <- ScaleData(rna.seu, verbose = FALSE)
+#rna.seu <- RunPCA(rna.seu, npcs = 30, verbose = FALSE)
+#rna.seu <- RunUMAP(rna.seu, reduction = "pca", dims = 1:30)
+#rna.seu <- FindNeighbors(rna.seu, dims = 1:30, verbose = FALSE)
+#rna.seu <- FindClusters(rna.seu, resolution= 0.5, verbose = FALSE)
+
+## loading offline previuos calculation
+#saveRDS(rna.seu, '../data/p0_rna_seurat.RDS')
+rna.seu <- readRDS('../data/p0_rna_seurat.RDS')
+```
+
+```{r}
+## adding metadata
+rna.seu$orig.ident <- metadata$IdentChar
+
+DimPlot(rna.seu, 
+        reduction = 'umap', 
+        label = TRUE, 
+        group.by = 'orig.ident') + 
+            NoLegend()
+```
+
+## Loading ATAC data
+
+```{r}
+p0chrDir <- '../data/chenS2019sameCellsData/GSE126074_P0_BrainCortex_SNAREseq_chromatin/'
+p0chr <- Read10X(
+        data.dir = p0chrDir,
+        gene.column = 1      ## necessary parameter, otherwise runs error
+)
+p0chr.Seu <- CreateSeuratObject(
+        counts = p0chr,
+        project = 'atac', 
+        min.cells = 1,
+        min.features = 1
+)
+```
+
+## ATAC preprocessing
+
+
+```{r}
+#activity.matrix <- CreateGeneActivityMatrix(
+#        peak.matrix = GetAssayData(p0chr.Seu, slot='counts'), 
+#        annotation.file = "../data/Mus_musculus.GRCm38.98.gtf.gz", 
+#        seq.levels = c(1:19, "X", "Y"), 
+#        upstream = 2000, 
+#        verbose = TRUE
+#)
+saveRDS(activity.matrix, '../data/p0_activity_matrix.RDS')
+activity.matrix <- readRDS('../data/p0_activity_matrix.RDS')
+```
+
+```{r}
+## creation of the Seurat object containing scATAC counts
+p0_atac <- CreateSeuratObject(
+        counts = GetAssayData(p0chr.Seu, slot = 'counts'),
+        assay = 'ATAC',
+        project = 'multilayer_integration'
+)
+## Adding estimated gene activity matrix
+p0_atac[['activity']] <- CreateAssayObject(
+        counts = activity.matrix
+)
+```
+
+```{r}
+## adding metadata to ATAC data from gene expression labels
+
+## getting the order in which cells appears in ATAC data
+ord <- match(colnames(p0_atac), 
+         colnames(rna.seu)) 
+p0_atac[['clust_ann']] <- rna.seu$orig.ident[ord] 
+
+```
+
+```{r}
+DefaultAssay(p0_atac) <- 'activity'
+p0_atac <- FindVariableFeatures(p0_atac) %>%
+              NormalizeData() %>%
+                ScaleData()
+```
+
+
+
+

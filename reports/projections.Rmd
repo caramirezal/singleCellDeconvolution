@@ -1,0 +1,110 @@
+---
+title: "Testing projection algorithms"
+author: "Carlos Ramirez Alvarez"
+date: "12/24/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE,
+                      message = FALSE,
+                      cache = TRUE)
+```
+
+```{r dependencies, echo=FALSE}
+## loading dependencies
+library(multiview)
+library(dplyr)
+library(Seurat)
+```
+
+```{r}
+## Cells Mixture cDNA
+mixcDNA <- read.table('../data/chenS2019sameCellsData/GSE126074_CellLineMixture_SNAREseq_cDNA_counts.tsv',
+                      sep = '\t',
+                      stringsAsFactors = FALSE)
+mixcDNA <- t(mixcDNA)
+
+
+## Cells Mixture chromatin
+mixchr <- read.table('../data/chenS2019sameCellsData/GSE126074_CellLineMixture_SNAREseq_chromatin_counts.tsv',
+                      sep = '\t',
+                      stringsAsFactors = FALSE) 
+mixchr <- t(mixchr)
+```
+
+## Cell lines clustering on mRNA dataset
+
+```{r normalization, echo=FALSE}
+mixcDNA.seu <- CreateSeuratObject(counts = t(mixcDNA), 
+                                  assay = 'mixCDNA')
+## Preprocessing
+mixcDNA.seu <- NormalizeData(mixcDNA.seu)
+mixcDNA.seu <- FindVariableFeatures(mixcDNA.seu, 
+                                     selection.method = 'vst',
+                                     nfeatures = 1000)
+```
+
+```{r clustering, echo=FALSE}
+mixcDNA.seu <- ScaleData(mixcDNA.seu, verbose = FALSE)
+mixcDNA.seu <- RunPCA(mixcDNA.seu, npcs = 30, verbose = FALSE)
+mixcDNA.seu <- RunUMAP(mixcDNA.seu, reduction = "pca", dims = 1:30)
+mixcDNA.seu <- FindNeighbors(mixcDNA.seu, dims = 1:30, verbose = FALSE)
+mixcDNA.seu <- FindClusters(mixcDNA.seu, resolution= 0.5, verbose = FALSE)
+```
+
+
+```{r cluster_labs, echo=FALSE}
+## Assignation of cluster names
+cell_labs <- plyr::mapvalues(x=mixcDNA.seu$seurat_clusters,
+                from=c(0,1,2,3),
+                to=c('H1', 'BJ', 'K562', 'GM12878'))
+mixcDNA.seu[['cell_labs']] <- cell_labs
+writeLines(as.character(cell_labs), '../data/cell_lines_labs.txt')
+``` 
+
+<center>
+```{r plot_clusters, echo=FALSE}
+DimPlot(mixcDNA.seu, 
+        reduction = 'umap', 
+        label = TRUE, 
+        group.by = 'cell_labs') + 
+            NoLegend()
+```
+</center>
+
+## Multiview data integration
+
+```{r multiview}
+## multiview
+#mv_projection <- mvmds(list(mixcDNA, mixchr), k = 10)
+#saveRDS(mv_projection, file = '../data/mv_projection.RDS')
+
+mv_projection <- readRDS('../data/mv_projection.RDS')
+mv_umap <- uwot::umap(mv_projection)
+labs <- readLines('../data/cell_lines_labs.txt')
+plot(mv_umap, col=as.factor(labs), pch=labs)
+```
+
+
+## Naive UMAP
+
+```{r naive}
+joint <- cbind(mixcDNA, mixchr)
+joint <- t(joint)
+
+#joint_umap <- uwot::umap(joint)
+#saveRDS(joint_umap, '../data/umap_naive.RDS')
+umap_naive <- readRDS('../data/umap_naive.RDS')
+plot(umap_naive, col=as.factor(labs), pch=labs)
+```
+
+## PCA -> UMAP
+
+```{r pca_umap}
+#umap_pca <- uwot::umap(joint, pca = 10)
+#saveRDS(umap_pca, '../data/umap_pca.RDS')
+umap_pca <- readRDS('../data/umap_pca.RDS')
+plot(umap_pca, col=as.factor(labs), pch=labs)
+```
+
