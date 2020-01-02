@@ -1,0 +1,53 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+
+
+```{r setup, include=FALSE, message=FALSE, warning=FALSE, echo=FALSE}
+library(DESeq2)
+```
+
+
+```{r loading_data}
+##############################################################################################
+## Cells Mixture RNA
+mixcDNA <- read.table('~/sc/singleCellDeconvolution/data/chenS2019sameCellsData/GSE126074_CellLineMixture_SNAREseq_cDNA_counts.tsv',
+                      sep = '\t',
+                      stringsAsFactors = FALSE) 
+
+##############################################################################################
+
+## Cells Mixture chromatin
+mixchr <- read.table('~/sc/singleCellDeconvolution/data/chenS2019sameCellsData/GSE126074_CellLineMixture_SNAREseq_chromatin_counts.tsv',
+                      sep = '\t',
+                      stringsAsFactors = FALSE) 
+```
+
+```{r}
+## rna processing
+# do DESeq2 norm
+sf <- estimateSizeFactorsForMatrix(mixcDNA + 1)
+mixcDNA <- t(t(mixcDNA)/sf)
+
+# transform to log2
+rna_norm <- apply(mixcDNA + 1, 2, log2)
+
+## atac processing
+
+# do DESeq2 norm
+sf <- estimateSizeFactorsForMatrix(mixchr + 1)
+mixchr <- t(t(mixchr)/sf)
+
+# transform to log2
+atac_norm <- apply(mixchr + 1, 2, log2)
+```
+
+```{r save_processing}
+saveRDS(rna_norm, '~/sc/singleCellDeconvolution/data/NMF/chen_data/rna_norm.RDS')
+saveRDS(atac_norm, '~/sc/singleCellDeconvolution/data/NMF/chen_data/atac_norm.RDS')
+integrated <- list(rna_norm, atac_norm)
+saveRDS(integrated, '~/sc/singleCellDeconvolution/data/NMF/chen_data/integrated.RDS')
+```
