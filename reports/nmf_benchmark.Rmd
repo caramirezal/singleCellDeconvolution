@@ -1,0 +1,104 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r setup, include=FALSE, message=FALSE, warning=FALSE, echo=FALSE}
+library(Bratwurst)
+library(ggplot2)
+library(viridis)
+library(ComplexHeatmap)
+library(gage)
+library(DT)
+library(knitr)
+library(Rtsne)
+library(gridExtra)
+```
+
+# Human cell lines mixture
+
+
+```{r cell_lines_data}
+## Cells Mixture RNA
+rna_norm <- readRDS('~/sc/singleCellDeconvolution/data/NMF/chen_data/rna_norm.RDS')
+
+## Cells Mixture chromatin
+atac_norm <- readRDS('~/sc/singleCellDeconvolution/data/NMF/chen_data/atac_norm.RDS') 
+
+cell_type <- read.table('~/sc/singleCellDeconvolution/data/cell_lines_metadata.tsv',
+                        sep = '\t', header = TRUE)
+```
+
+```{r umap}
+rna_umap <- uwot::umap(t(rna_norm), metric = 'cosine')
+plot(rna_umap, col=as.factor(cell_type$Ident), pch=as.character(cell_type$Ident))
+```
+
+
+```{r umap}
+atac_umap <- uwot::umap(t(atac_norm), metric = 'cosine')
+plot(atac_umap, col=as.factor(cell_type$Ident), pch=as.character(cell_type$Ident))
+```
+
+## Non-Negative Matrix Factorization
+
+```{r loading_data, eval=FALSE}
+multiview <- readRDS('~/mynewdir/data/NMF/chen_data/integrated.RDS')
+```
+
+
+```{r run_nmf, eval=FALSE}
+k.min <- 8
+k.max <- 8
+outer.iter <- 5
+inner.iter <- 2*10^4
+
+int.nmf.exp <- run_integrative_NMF_tensor(multiview, 
+                                          k_min = k.min, 
+                                          k_max = k.max, 
+                                          outer_iter = outer.iter, 
+                                          inner_iter = inner.iter, 
+                                          conver_stop_threshold = 40, 
+                                          lambda=0.0005)
+#Factorization rank:  8 
+#[1] \NMF converged after  697, FrobError_list), 2, which.min) : 
+#  dim(X) must have a positive length
+```
+
+
+## SATSNE
+
+```{r satsne, eval=FALSE}
+nk1=250 #nns in data1
+nk2=250 #nns in data2
+L1=10#8
+L2=10#8
+
+n1<-nrow(rna_norm)
+n2<-nrow(atac_norm)
+perplex_in1=min(floor(n1/5),250) #130
+perplex_in2=min(floor(n2/5),250)
+perplex_fin=30
+perplex_steps=0.8
+no.initiations=1
+
+source('code/d2p.R')
+source('code/satsne_p.R')
+source('code/satsne_annealing.R')
+
+
+tsneX <- satsne_annealing (rna_norm, atac_norm, cell_type$Ident, cell_type$Ident,
+                           labels1=timepoint1, labels2=timepoint2,
+                           nk1=nk1, nk2=nk2, 
+                           L1=L1, L2=L2, no_dims=2,
+                           perplex_in1=perplex_in1,
+                           perplex_in2=perplex_in2, 
+                           perplex_fin=perplex_fin, 
+                           perplex_steps=perplex_steps,
+                           no.initiations=no.initiations, 
+                           Y1_init=NULL,Y2_init=NULL, 
+                           max_iter = 200, do.plot=FALSE)
+
+```
+
+
