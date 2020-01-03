@@ -1,5 +1,5 @@
 ---
-title: "R Notebook"
+title: "Gene expression + ATAC data integration"
 output: html_notebook
 ---
 
@@ -13,6 +13,12 @@ library(DT)
 library(knitr)
 library(Rtsne)
 library(gridExtra)
+
+knitr::opts_chunk$set(
+        warning = FALSE,
+        message = FALSE,
+        cache = TRUE
+)
 ```
 
 # Human cell lines mixture
@@ -29,27 +35,42 @@ cell_type <- read.table('~/sc/singleCellDeconvolution/data/cell_lines_metadata.t
                         sep = '\t', header = TRUE)
 ```
 
-```{r umap}
+
+## mRNA
+
+```{r rna_umap}
 rna_umap <- uwot::umap(t(rna_norm), metric = 'cosine')
 plot(rna_umap, col=as.factor(cell_type$Ident), pch=as.character(cell_type$Ident))
 ```
 
+## ATAC 
 
-```{r umap}
+```{r atac_umap}
 atac_umap <- uwot::umap(t(atac_norm), metric = 'cosine')
 plot(atac_umap, col=as.factor(cell_type$Ident), pch=as.character(cell_type$Ident))
 ```
 
 ## Non-Negative Matrix Factorization
 
-```{r loading_data, eval=FALSE}
-multiview <- readRDS('~/mynewdir/data/NMF/chen_data/integrated.RDS')
-```
+```{r nmf_preprocessing}
+## pca on normalized data to reduce complexity
+#rna_pca <- prcomp(rna_norm, rank. = 100)
+#atac_pca <- prcomp(atac_norm, rank. = 300)
+#saveRDS(rna_pca$rotation, '../data/cell_lines_rna_pca.RDS')
+#saveRDS(atac_pca$rotation, '../data/cell_lines_atac_pca.RDS')
+rna_pca <- readRDS('../data/cell_lines_rna_pca.RDS')
+atac_pca <- readRDS('../data/cell_lines_atac_pca.RDS')
+multiview <- list(rna_sample, atac_sample)
 
+## subsampling cells for testing purposes
+sampling <- sample(1:nrow(rna_pca), 30)
+rna_sample <- rna_pca[sampling, ]
+atac_sample <- atac_pca[sampling, ]
+```
 
 ```{r run_nmf, eval=FALSE}
 k.min <- 8
-k.max <- 8
+k.max <- 10
 outer.iter <- 5
 inner.iter <- 2*10^4
 
@@ -59,36 +80,37 @@ int.nmf.exp <- run_integrative_NMF_tensor(multiview,
                                           outer_iter = outer.iter, 
                                           inner_iter = inner.iter, 
                                           conver_stop_threshold = 40, 
-                                          lambda=0.0005)
-#Factorization rank:  8 
-#[1] \NMF converged after  697, FrobError_list), 2, which.min) : 
-#  dim(X) must have a positive length
+                                          lambda=0.5)
+
+## Error in apply(Reduce("+", FrobError_list), 2, which.min) : dim(X) must have a positive length
 ```
 
 
 ## SATSNE
 
-```{r satsne, eval=FALSE}
-nk1=250 #nns in data1
-nk2=250 #nns in data2
+```{r satsne}
+nk1=10 #nns in data1
+nk2=10 #nns in data2
 L1=10#8
 L2=10#8
 
-n1<-nrow(rna_norm)
-n2<-nrow(atac_norm)
+
+n1<-nrow(rna_pca)
+n2<-nrow(atac_pca)
 perplex_in1=min(floor(n1/5),250) #130
 perplex_in2=min(floor(n2/5),250)
 perplex_fin=30
 perplex_steps=0.8
 no.initiations=1
 
-source('code/d2p.R')
-source('code/satsne_p.R')
-source('code/satsne_annealing.R')
+source('~/sc/SATSNE2019/code/d2p.R')
+source('~/sc/SATSNE2019/code/satsne_p.R')
+source('~/sc/SATSNE2019/code/satsne_annealing.R')
 
 
-tsneX <- satsne_annealing (rna_norm, atac_norm, cell_type$Ident, cell_type$Ident,
-                           labels1=timepoint1, labels2=timepoint2,
+tsneX <- satsne_annealing (X10 = rna_pca, X20 = atac_pca,
+                           labels1=cell_type$Ident, 
+                           labels2=cell_type$Ident,
                            nk1=nk1, nk2=nk2, 
                            L1=L1, L2=L2, no_dims=2,
                            perplex_in1=perplex_in1,
@@ -98,7 +120,11 @@ tsneX <- satsne_annealing (rna_norm, atac_norm, cell_type$Ident, cell_type$Ident
                            no.initiations=no.initiations, 
                            Y1_init=NULL,Y2_init=NULL, 
                            max_iter = 200, do.plot=FALSE)
-
 ```
+
+```{r satsne_plot}
+plot(tsneX$Y2, col=cell_type$Ident)
+```
+
 
 
