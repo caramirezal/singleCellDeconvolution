@@ -6,19 +6,23 @@ output: html_notebook
 ```{r setup, include=FALSE, message=FALSE, warning=FALSE, echo=FALSE}
 library(Bratwurst)
 library(ggplot2)
-library(viridis)
-library(ComplexHeatmap)
 library(gage)
-library(DT)
 library(knitr)
 library(Rtsne)
 library(gridExtra)
+library(Seurat)
+library(multiview)
+library(Matrix)
+library(cisTopic)
+library(dplyr)
 
 knitr::opts_chunk$set(
         warning = FALSE,
         message = FALSE,
         cache = TRUE
 )
+
+theme_set(theme_light())
 ```
 
 # Human cell lines mixture
@@ -36,39 +40,48 @@ cell_type <- read.table('~/sc/singleCellDeconvolution/data/cell_lines_metadata.t
 ```
 
 
-## mRNA
+## mRNA & ATAC UMAP
 
-```{r rna_umap}
+```{r umap}
+## Gene expression
 rna_umap <- uwot::umap(t(rna_norm), metric = 'cosine')
-plot(rna_umap, col=as.factor(cell_type$Ident), pch=as.character(cell_type$Ident))
-```
+rna_df <- cbind(as.data.frame(rna_umap), cell_type)
+rna_plot <- ggplot(rna_df, aes(x = V1, y = V2, colour = Ident)) + geom_point(alpha=0.5) +     
+               theme(legend.position = 'none') + ggtitle('Gene expression')
 
-## ATAC 
-
-```{r atac_umap}
+## ATAC
 atac_umap <- uwot::umap(t(atac_norm), metric = 'cosine')
-plot(atac_umap, col=as.factor(cell_type$Ident), pch=as.character(cell_type$Ident))
+atac_df <- cbind(as.data.frame(atac_umap), cell_type)
+atac_plot <- ggplot(atac_df, aes(x = V1, y = V2, colour = Ident)) + geom_point(alpha=0.5) +
+              theme(legend.position = 'none') + ggtitle('ATAC')
 ```
+
+<center>
+```{r results='asis', fig.width=7, fig.height=4, echo=FALSE}
+grid.arrange(rna_plot, atac_plot, nrow=1)
+```
+</center>
 
 ## Non-Negative Matrix Factorization
 
-```{r nmf_preprocessing}
+```{r nmf_preprocessing, eval=FALSE, echo=FALSE}
 ## pca on normalized data to reduce complexity
-#rna_pca <- prcomp(rna_norm, rank. = 100)
-#atac_pca <- prcomp(atac_norm, rank. = 300)
-#saveRDS(rna_pca$rotation, '../data/cell_lines_rna_pca.RDS')
-#saveRDS(atac_pca$rotation, '../data/cell_lines_atac_pca.RDS')
+rna_pca <- prcomp(rna_norm, rank. = 100)
+atac_pca <- prcomp(atac_norm, rank. = 300)
+saveRDS(rna_pca$rotation, '../data/cell_lines_rna_pca.RDS')
+saveRDS(atac_pca$rotation, '../data/cell_lines_atac_pca.RDS')
+```
+
+```{r run_nmf, eval=FALSE}
 rna_pca <- readRDS('../data/cell_lines_rna_pca.RDS')
 atac_pca <- readRDS('../data/cell_lines_atac_pca.RDS')
-multiview <- list(rna_sample, atac_sample)
 
 ## subsampling cells for testing purposes
 sampling <- sample(1:nrow(rna_pca), 30)
 rna_sample <- rna_pca[sampling, ]
 atac_sample <- atac_pca[sampling, ]
-```
+multiview <- list(rna_sample, atac_sample)
 
-```{r run_nmf, eval=FALSE}
 k.min <- 8
 k.max <- 10
 outer.iter <- 5
@@ -85,10 +98,17 @@ int.nmf.exp <- run_integrative_NMF_tensor(multiview,
 ## Error in apply(Reduce("+", FrobError_list), 2, which.min) : dim(X) must have a positive length
 ```
 
+**NOTES**: 
+
+* Computationally intensive.
+
+* To be run inside Docker Bratwurst container.
+
+* Error probably arises after the NMF is performed. 
 
 ## SATSNE
 
-```{r satsne}
+```{r satsne, eval=FALSE}
 nk1=10 #nns in data1
 nk2=10 #nns in data2
 L1=10#8
@@ -122,9 +142,260 @@ tsneX <- satsne_annealing (X10 = rna_pca, X20 = atac_pca,
                            max_iter = 200, do.plot=FALSE)
 ```
 
-```{r satsne_plot}
-plot(tsneX$Y2, col=cell_type$Ident)
+```{r satsne_plot, echo=FALSE}
+#saveRDS(tsneX, '../data/tsneX.RDS')
+tsneX <- readRDS('../data/tsneX.RDS')
+#plot(tsneX$Y2, col=cell_type$Ident)
+tsne_y2 <- tsneX$Y2
+colnames(tsne_y2) <- c('tsne1', 'tsne2')
+satsne_df <- cbind(tsne_y2, cell_type)
+satsne_plot <- ggplot(satsne_df, aes(x = tsne1, y = tsne2, colour = Ident)) +
+                   geom_point(alpha=0.5) + 
+                   ggtitle('SATSNE') + 
+                   theme(title = element_text(size = 14, face = 'bold'))
+plot(satsne_plot)
+```
+
+**NOTES**:
+
+* Computationally intensive: PCA prior to projection otherwise runs a memory error (tested with 200Gb RAM!).
+
+## Multiview
+
+```{r multiview, eval=FALSE}
+## multiview
+mv_projection <- mvmds(list(mixcDNA, mixchr), k = 10)
+mv_umap <- uwot::umap(mv_projection)
+```
+
+```{r multiview_plot, echo=FALSE}
+#saveRDS(mv_projection, file = '../data/mv_projection.RDS')
+mv_projection <- readRDS('../data/mv_projection.RDS')
+mv_umap <- uwot::umap(mv_projection)
+mv_df <- cbind(as.data.frame(mv_umap), cell_type)
+#plot(mv_umap, col=as.factor(cell_type$Ident))
+mv_plot <- ggplot(mv_df, 
+                  aes(x = V1, y = V2, colour = Ident)) + 
+                     geom_point(alpha=0.5) + 
+                     ggtitle('MULTIVIEW') + 
+                     theme(title = element_text(size = 14, face = 'bold'))
+plot(mv_plot)
 ```
 
 
+## Seurat 
+
+```{r eval=FALSE, echo=FALSE}
+## Cells Mixture cDNA
+mixcDNA <- read.table('../data/chenS2019sameCellsData/GSE126074_CellLineMixture_SNAREseq_cDNA_counts.tsv',
+                      sep = '\t',
+                      stringsAsFactors = FALSE)
+## Cells Mixture chromatin
+mixchr <- read.table('../data/chenS2019sameCellsData/GSE126074_CellLineMixture_SNAREseq_chromatin_counts.tsv',
+                      sep = '\t',
+                      stringsAsFactors = FALSE) 
+```
+
+```{r seurat, eval=FALSE}
+mixcDNA.seu <- CreateSeuratObject(counts = mixcDNA, 
+                                  assay = 'mixCDNA')
+## Preprocessing
+mixcDNA.seu <- NormalizeData(mixcDNA.seu)
+mixcDNA.seu <- FindVariableFeatures(mixcDNA.seu, 
+                                     selection.method = 'vst',
+                                     nfeatures = 1000)
+
+mixcDNA.seu <- ScaleData(mixcDNA.seu, verbose = FALSE)
+mixcDNA.seu <- RunPCA(mixcDNA.seu, npcs = 30, verbose = FALSE)
+mixcDNA.seu <- RunUMAP(mixcDNA.seu, reduction = "pca", dims = 1:30)
+mixcDNA.seu <- FindNeighbors(mixcDNA.seu, dims = 1:30, verbose = FALSE)
+mixcDNA.seu <- FindClusters(mixcDNA.seu, resolution= 0.5, verbose = FALSE)
+
+## Assignation of cluster names
+cell_labs <- plyr::mapvalues(x=mixcDNA.seu$seurat_clusters,
+                from=c(0,1,2,3),
+                to=c('H1', 'BJ', 'K562', 'GM12878'))
+mixcDNA.seu[['cell_labs']] <- cell_labs
+
+## Visualisation check
+DimPlot(mixcDNA.seu, 
+        reduction = 'umap', 
+        label = TRUE, 
+        group.by = 'cell_labs') + 
+            NoLegend()
+
+## creation of seurat objects
+mixcDNA.seu <- CreateSeuratObject(counts = mixcDNA, 
+                                  assay = 'mixCDNA')
+mixchr.Seu <- CreateSeuratObject(counts = mixchr,
+                                 assay = 'mixChr')
+
+## Preprocessing
+mixture <- list(mixcDNA.seu, mixchr.Seu)
+names(mixture) <- c('mix_mRNA', 'mix_chr')
+for (i in 1:length(mixture)){
+        mixture[[i]] <- NormalizeData(mixture[[i]])
+        mixture[[i]] <- FindVariableFeatures(mixture[[i]], 
+                                              selection.method = 'vst',
+                                              nfeatures = 1000)
+}
+## stanadard preprocessing gene expression
+mixture$mix_mRNA <- ScaleData(mixture$mix_mRNA, verbose = FALSE)
+mixture[[1]] <- RunPCA(mixture[[1]], npcs = 30, verbose = FALSE)
+mixture[[1]] <- RunUMAP(mixture[[1]], reduction = "pca", dims = 1:30)
+mixture[[1]] <- FindNeighbors(mixture[[1]], dims = 1:30, verbose = FALSE)
+mixture[[1]] <- FindClusters(mixture[[1]], resolution= 0.5, verbose = FALSE)
+
+## labeling
+mixture[[1]][['cell_labs']] <- cell_type$Ident
+
+## gene activity matrix
+activity.matrix <- CreateGeneActivityMatrix(
+        peak.matrix = GetAssayData(mixture[[2]], slot='counts'), 
+                annotation.file = "../data/Homo_sapiens.GRCh38.98.gtf.gz", 
+        seq.levels = c(1:22, "X", "Y"), 
+        upstream = 2000, 
+        verbose = TRUE
+)
+#saveRDS(activity.matrix, '../data/cell_lines_activity_matrix.RDS')
+activity.matrix <- readRDS('../data/cell_lines_activity_matrix.RDS')
+## creation of the Seurat object containing scATAC counts
+cl_atac <- CreateSeuratObject(
+        counts = GetAssayData(mixture[[2]], slot = 'counts'),
+        assay = 'ATAC',
+        project = 'atac'
+)
+## Adding estimated gene activity matrix
+cl_atac[['activity']] <- CreateAssayObject(
+        counts = activity.matrix
+)
+cl_atac[['clust_ann']] <- cell_type$Ident
+DefaultAssay(cl_atac) <- 'activity'
+n_features = 3000
+n_pca_dims = 15
+cl_atac <- NormalizeData(cl_atac) %>%
+                FindVariableFeatures(selection.method = 'vst',
+                                     nfeatures = n_features)
+cl_atac <- ScaleData(cl_atac, 
+                      verbose = FALSE) %>% 
+        RunPCA(npcs = n_pca_dims, 
+               verbose = FALSE) %>%
+        RunUMAP(reduction = "pca", 
+                dims = 1:n_pca_dims) 
+mixture[[1]]$'clust_ann' <- cell_type$Ident
+cl_list <- list(mixture[[1]], cl_atac)
+anchors <- FindIntegrationAnchors(cl_list, dims = 1:20)
+integrated <- IntegrateData(anchorset = anchors,
+                                     dims = 1:20)
+
+# Visualisation of the integrated data
+DefaultAssay(integrated) <- "integrated"
+integrated <- ScaleData(integrated, 
+                        verbose = FALSE)
+integrated <- RunPCA(integrated, 
+                     npcs = 30, 
+                     verbose = FALSE)
+integrated <- RunUMAP(integrated, 
+                      reduction = "pca", 
+                      dims = 1:30)
+
+integrated$'datasets' <- sapply(integrated$orig.ident, function(x)
+                                ifelse( x == "SeuratProject" , 'mRNA', x))
+```
+
+```{r integration_plot, echo=FALSE, eval=FALSE}
+#saveRDS(cl_atac, '../data/cell_lines_atac_seurat.RDS')
+cl_atac <- readRDS('../data/cell_lines_atac_seurat.RDS')
+seurat_integration_plot <- DimPlot(cl_atac, reduction = 'umap', group.by = 'clust_ann')
+plot(seurat_integration_plot)
+```
+
+```{r embedding_plot,echo=FALSE, eval=FALSE}
+seurat_embedding_plot <- DimPlot(integrated, group.by = 'datasets', reduction = 'umap', 
+        label = FALSE)
+plot(seurat_embedding_plot)
+```
+
+```{r seurat_plot, echo=FALSE, fig.width=7, fig.height=4}
+grid.arrange(seurat_integration_plot, seurat_embedding_plot, nrow=1)
+```
+
+
+
+
+
+
+## Cistopic 
+
+```{r cistopic, eval=FALSE}
+peak.sum=rowSums(mixchr)
+
+## Selects number of peaks bigger than 5 and less than 10 percent of 
+## the number of cells
+max.ratio=0.01
+min.peak=5
+peak.selected=rownames(mixchr)[peak.sum<ceiling(ncol(mixchr)*max.ratio) & peak.sum>min.peak]
+mixchr=mixchr[peak.selected,]
+mixchr[mixchr>1]=1
+
+cisTopicObject <- createcisTopicObject(mixchr, project.name='cell_lines_atac')
+#Ad.metadata.df=readRDS("P0BrainCortex_SNAREseq_metadata_full.rds") %>%
+#                   mutate_if(is.factor, as.character)
+#cisTopicObject <- addCellMetadata(cisTopicObject, cell.data = Ad.metadata.df)
+
+## run cistopic
+cisTopicObject <- runModels(
+        cisTopicObject, 
+        topic=seq(20,30,by=5), 
+        seed=987, 
+        nCores=3, 
+        burnin = 100, 
+        iterations = 200
+)
+
+## model selection
+#logLikelihoodByIter(cisTopicObject)
+cisTopicObject <- selectModel(cisTopicObject)
+
+cisTopicObject <- runtSNE(
+        cisTopicObject, 
+        target='cell', 
+        perplexity=50, 
+        check_duplicates=FALSE
+)
+
+cell_lines_tsne=cisTopicObject@dr$cell$tSNE
+cell_lines_tsne=as.data.frame(cell_lines_tsne)
+cell_lines_tsne <- cbind(cell_lines_tsne, cell_type)
+saveRDS(cell_lines_tsne, '../data/cell_lines_cistopic.RDS')
+```
+
+```{r cistopic_plot, echo=FALSE}
+cell_lines_tsne <- readRDS('../data/cell_lines_cistopic.RDS')
+cistopic_plot <- ggplot(cell_lines_tsne, 
+                        aes(x = tSNE1, y = tSNE2, colour = Ident)) +
+                           geom_point(alpha = .5) + 
+                        ggtitle('CISTOPIC') + 
+                        theme(title = element_text(size = 14, face = 'bold'))
+plot(cistopic_plot)
+```
+
+## Overview
+
+```{r fig.width=7, fig.height=8, echo=FALSE}
+grid.arrange(satsne_plot,
+             mv_plot,
+             seurat_integration_plot + ggtitle('SEURAT INTEGRATION'), 
+             seurat_embedding_plot + ggtitle('SEURAT EMBEDDING'), 
+             cistopic_plot,
+             nrow=3)
+```
+
+## TODO:
+
+* Run NMF.
+
+* Test neonatal data (~5,000 cells).
+
+* Test SNAPATAC (and SNAPTOOLS).
 
