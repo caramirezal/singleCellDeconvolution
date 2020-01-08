@@ -44,13 +44,13 @@ cell_type <- read.table('~/sc/singleCellDeconvolution/data/cell_lines_metadata.t
 
 ```{r umap}
 ## Gene expression
-rna_umap <- uwot::umap(t(rna_norm), metric = 'cosine', pca = 300)
+rna_umap <- uwot::umap(t(rna_norm), metric = 'cosine')
 rna_df <- cbind(as.data.frame(rna_umap), cell_type)
 rna_plot <- ggplot(rna_df, aes(x = V1, y = V2, colour = Ident)) + geom_point(alpha=0.5) +     
                theme(legend.position = 'none') + ggtitle('Gene expression')
 
 ## ATAC
-atac_umap <- uwot::umap(t(atac_norm), metric = 'cosine', pca = 300)
+atac_umap <- uwot::umap(t(atac_norm), metric = 'cosine')
 atac_df <- cbind(as.data.frame(atac_umap), cell_type)
 atac_plot <- ggplot(atac_df, aes(x = V1, y = V2, colour = Ident)) + geom_point(alpha=0.5) +
               theme(legend.position = 'none') + ggtitle('ATAC')
@@ -166,6 +166,7 @@ int.nmf.exp <- run_integrative_NMF_tensor(multiview,
                                           inner_iter = inner.iter, 
                                           conver_stop_threshold = 40, 
                                           lambda=0.5)
+
 ```
 
 

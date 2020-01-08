@@ -1,0 +1,83 @@
+---
+title: "Bratwurst testing"
+author: "HDSU"
+date: "`r date()`"
+output: html_document
+---
+
+## Loading data
+
+
+```{r setup, include=FALSE, message=FALSE, warning=FALSE, echo=FALSE}
+library(Bratwurst)
+library(ggplot2)
+library(viridis)
+library(ComplexHeatmap)
+library(gage)
+library(DESeq2)
+library(DT)
+library(knitr)
+```
+
+
+```{r sampling}
+rna_sample <- readRDS('~/mynewdir/sc/singleCellDeconvolution/data/cell_lines_rna.RDS')
+atac_sample <- readRDS('~/mynewdir/sc/singleCellDeconvolution/data/cell_lines_atac.RDS')
+cell_types <- read.table('../data/cell_lines_metadata.tsv', header = TRUE)
+
+random_sample <- sample(1:ncol(rna_sample), 500) 
+rna_sample <- rna_sample[, random_sample]
+atac_sample <- atac_sample[, random_sample]
+tags <- cell_types$Ident[random_sample]
+```
+
+```{r normalization}
+## normalization using DESeq2
+deseq2_norm <- function(count_matrix){
+        
+        sf <- estimateSizeFactorsForMatrix(count_matrix+ 1)
+        counts.m <- t(t(count_matrix)/sf)
+        
+        # transform to log2
+        norm_matrix <- apply(counts.m + 1, 2, log2)
+        
+        return(norm_matrix)
+}
+
+rna_norm <- deseq2_norm(rna_sample)
+atac_norm <- deseq2_norm(atac_sample)
+```
+
+## Data structure
+
+```{r}
+lapply(list(rna_norm, atac_norm), dim)
+```
+
+```{r rna_head}
+head(rna_norm[, 1:6])
+```
+
+```{r atac_head}
+head(atac_norm[, 1:6])
+```
+
+## Running test
+```{r run_nmf}
+multiview <- list(rna = rna_norm, atac = atac_norm)
+
+k.min <- 7
+k.max <- 10
+outer.iter <- 5
+inner.iter <- 2*10^4
+
+int.nmf.exp <- run_integrative_NMF_tensor(multiview, 
+                                          k_min = k.min, 
+                                          k_max = k.max, 
+                                          outer_iter = outer.iter, 
+                                          inner_iter = inner.iter, 
+                                          conver_stop_threshold = 40, 
+                                          lambda=0.005)
+
+nmf_30samps <- saveRDS(int.nmf.exp, '../data/nmf_cell_lines.RDS')
+```
