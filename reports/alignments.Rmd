@@ -1,0 +1,476 @@
+---
+title: "Gene expression + ATAC data integration"
+output: html_notebook
+---
+
+```{r setup, include=FALSE, message=FALSE, warning=FALSE, echo=FALSE}
+library(ggplot2)
+library(knitr)
+library(Rtsne)
+library(gridExtra)
+library(Seurat)
+library(Matrix)
+library(cisTopic)
+library(dplyr)
+library(DESeq2)
+
+knitr::opts_chunk$set(
+        warning = FALSE,
+        message = FALSE,
+        cache = TRUE
+)
+
+theme_set(theme_light())
+```
+
+# Human cell lines mixture
+
+
+```{r loading_data}
+##############################################################################################
+## Cells Mixture RNA
+rna <- read.table('~/sc/singleCellDeconvolution/data/chenS2019sameCellsData/GSE126074_CellLineMixture_SNAREseq_cDNA_counts.tsv',
+                      sep = '\t',
+                      stringsAsFactors = FALSE) 
+
+##############################################################################################
+
+## Cells Mixture chromatin
+atac <- read.table('~/sc/singleCellDeconvolution/data/chenS2019sameCellsData/GSE126074_CellLineMixture_SNAREseq_chromatin_counts.tsv',
+                      sep = '\t',
+                      stringsAsFactors = FALSE) 
+
+cell_type <- read.table('../data/cell_lines_metadata.tsv', header = TRUE)
+```
+
+
+```{r normalization, eval=FALSE}
+## normalization using DESeq2
+deseq2_norm <- function(count_matrix){
+        
+        sf <- estimateSizeFactorsForMatrix(count_matrix+ 1)
+        counts.m <- t(t(count_matrix)/sf)
+        
+        # transform to log2
+        norm_matrix <- apply(counts.m + 1, 2, log2)
+        
+        return(norm_matrix)
+}
+
+rna_norm <- deseq2_norm(rna)
+atac_norm <- deseq2_norm(atac)
+```
+
+
+## mRNA & ATAC Clustering
+
+```{r rna_umap}
+## Gene expression
+rna_umap <- uwot::umap(t(rna_norm), metric = 'cosine')
+rna_df <- cbind(as.data.frame(rna_umap), cell_type)
+rna_plot <- ggplot(rna_df, aes(x = V1, y = V2, colour = Ident)) + geom_point(alpha=0.5) +     
+               theme(legend.position = 'none') + ggtitle('Gene expression')
+```
+
+## Cistopic 
+
+```{r cistopic, eval=FALSE}
+peak.sum=rowSums(atac)
+
+## Selects number of peaks bigger than 5 and less than 10 percent of 
+## the number of cells
+max.ratio=0.01
+min.peak=5
+peak.selected=rownames(atac)[peak.sum<ceiling(ncol(atac)*max.ratio) & peak.sum>min.peak]
+atac=atac[peak.selected,]
+atac[atac>1]=1
+
+cisTopicObject <- createcisTopicObject(atac, project.name='cell_lines_atac')
+
+## run cistopic
+cisTopicObject <- runModels(
+        cisTopicObject, 
+        topic=seq(20,30,by=5), 
+        seed=987, 
+        nCores=3, 
+        burnin = 100, 
+        iterations = 200
+)
+
+## model selection
+logLikelihoodByIter(cisTopicObject)
+cisTopicObject <- selectModel(cisTopicObject)
+
+cisTopicObject <- runtSNE(
+        cisTopicObject, 
+        target='cell', 
+        perplexity=50, 
+        check_duplicates=FALSE
+)
+
+cell_lines_tsne=cisTopicObject@dr$cell$tSNE
+cell_lines_tsne=as.data.frame(cell_lines_tsne)
+cell_lines_tsne$'Barcode' <- rownames(cell_lines_tsne)
+head(cell_lines_tsne)
+
+cell_lines_tsne <- merge(cell_lines_tsne, cell_type)
+saveRDS(cell_lines_tsne, '../data/cell_lines_cistopic.RDS')
+```
+
+```{r cistopic_plot, echo=FALSE}
+cell_lines_tsne <- readRDS('../data/cell_lines_cistopic.RDS')
+cistopic_plot <- ggplot(cell_lines_tsne, 
+                        aes(x = tSNE1, y = tSNE2, colour = Ident)) +
+                           geom_point(alpha = .5) + 
+                        ggtitle('CISTOPIC') + 
+                        theme(title = element_text(size = 14, face = 'bold'))
+plot(cistopic_plot)
+```
+
+## SATSNE
+
+```{r satsne, results='as.is'}
+nk1=10 #nns in data1
+nk2=10 #nns in data2
+L1=10#8
+L2=10#8
+
+## pertenency matrix construction
+cell_types <- unique(cell_labs)
+shared <- matrix(0, length(cell_labs), length(cell_types))
+colnames(shared) <- cell_types
+for (i in 1:nrow(shared)){
+        cell_type_index <- which(cell_labs[i]==cell_types) 
+        shared[i, cell_type_index] <- 1
+}
+
+n1<-nrow(rna_pca)
+n2<-nrow(atac_pca)
+perplex_in1=min(floor(n1/5),250) #130
+perplex_in2=min(floor(n2/5),250)
+perplex_fin=30
+perplex_steps=0.8
+no.initiations=1
+
+source('~/sc/SATSNE2019/code/d2p.R')
+source('~/sc/SATSNE2019/code/satsne_p.R')
+source('~/sc/SATSNE2019/code/satsne_annealing.R')
+```
+
+
+
+```{r umap_satsne}
+tsneX <- satsne_annealing (X10 = rna_umap, X20 = atac_umap, 
+                           X1shared = shared, X2shared = shared,
+                           labels1=cell_type$Ident, 
+                           labels2=cell_type$Ident,
+                           nk1=nk1, nk2=nk2, 
+                           L1=L1, L2=L2, no_dims=2,
+                           perplex_in1=perplex_in1,
+                           perplex_in2=perplex_in2, 
+                           perplex_fin=perplex_fin, 
+                           perplex_steps=perplex_steps,
+                           no.initiations=no.initiations, 
+                           Y1_init=NULL,Y2_init=NULL, 
+                           max_iter = 200, do.plot=TRUE)
+```
+
+```{r cistopic_satsne}
+cistopic_output <- readRDS('../data/cell_lines_cistopic.RDS')
+cistopic.m <- as.matrix(cistopic_output[, 1:2])
+tsneX <- satsne_annealing (X10 = rna_umap, X20 = cistopic.m, 
+                           X1shared = shared, X2shared = shared,
+                           labels1=cell_type$Ident, 
+                           labels2=cell_type$Ident,
+                           nk1=nk1, nk2=nk2, 
+                           L1=L1, L2=L2, no_dims=2,
+                           perplex_in1=perplex_in1,
+                           perplex_in2=perplex_in2, 
+                           perplex_fin=perplex_fin, 
+                           perplex_steps=perplex_steps,
+                           no.initiations=no.initiations, 
+                           Y1_init=NULL,Y2_init=NULL, 
+                           max_iter = 200, do.plot=TRUE)
+```
+
+
+
+**NOTES**:
+
+* Computationally intensive: PCA prior to projection otherwise runs a memory error (tested with 200Gb RAM!).
+
+## Non-Negative Matrix Factorization
+
+```{r nmf_preprocessing, eval=FALSE, echo=FALSE}
+## pca on normalized data to reduce complexity
+rna_pca <- prcomp(rna_norm, rank. = 100)
+atac_pca <- prcomp(atac_norm, rank. = 300)
+saveRDS(rna_pca$rotation, '../data/cell_lines_rna_pca.RDS')
+saveRDS(atac_pca$rotation, '../data/cell_lines_atac_pca.RDS')
+```
+
+```{r run_nmf, eval=FALSE}
+rna_pca <- readRDS('../data/cell_lines_rna_pca.RDS')
+atac_pca <- readRDS('../data/cell_lines_atac_pca.RDS')
+
+## subsampling cells for testing purposes
+sampling <- sample(1:nrow(rna_pca), 30)
+rna_sample <- rna_pca[sampling, ]
+atac_sample <- atac_pca[sampling, ]
+multiview <- list(rna_sample, atac_sample)
+
+k.min <- 8
+k.max <- 10
+outer.iter <- 5
+inner.iter <- 2*10^4
+
+int.nmf.exp <- run_integrative_NMF_tensor(multiview, 
+                                          k_min = k.min, 
+                                          k_max = k.max, 
+                                          outer_iter = outer.iter, 
+                                          inner_iter = inner.iter, 
+                                          conver_stop_threshold = 40, 
+                                          lambda=0.5)
+```
+
+
+```{r nmf_visualization, echo=FALSE}
+nmf <- readRDS('../data/nmf_cell_lines_100.RDS')
+nmf.int <- nmf[[1]]
+nmf.atac <- nmf.int@view_specific_HMatrix_list$k7$iter5$atac
+
+nmf_umap <- uwot::umap(t(nmf.atac))
+nmf_umap <- cbind(as.data.frame(nmf_umap), nmf$annotations)
+names(nmf_umap) <- c('umap1', 'umap2', 'annotations')
+
+nmf_plot <- ggplot(nmf_umap,
+                   aes(x=umap1, y=umap2, colour=annotations)) +
+                       geom_point(alpha = 0.5) + 
+                   ggtitle('NMF') + 
+                   theme(title = element_text(size = 14, face = 'bold'))
+nmf_plot
+```
+**NOTES**: 
+
+
+
+
+
+
+## Seurat 
+
+```{r echo=FALSE}
+## Cells Mixture cDNA
+mixcDNA <- read.table('../data/chenS2019sameCellsData/GSE126074_CellLineMixture_SNAREseq_cDNA_counts.tsv',
+                      sep = '\t',
+                      stringsAsFactors = FALSE)
+## Cells Mixture chromatin
+atac <- read.table('../data/chenS2019sameCellsData/GSE126074_CellLineMixture_SNAREseq_chromatin_counts.tsv',
+                      sep = '\t',
+                      stringsAsFactors = FALSE) 
+```
+
+```{r seurat, eval=FALSE}
+mixcDNA.seu <- CreateSeuratObject(counts = mixcDNA, 
+                                  assay = 'mixCDNA')
+## Preprocessing
+mixcDNA.seu <- NormalizeData(mixcDNA.seu)
+mixcDNA.seu <- FindVariableFeatures(mixcDNA.seu, 
+                                     selection.method = 'vst',
+                                     nfeatures = 1000)
+
+mixcDNA.seu <- ScaleData(mixcDNA.seu, verbose = FALSE)
+mixcDNA.seu <- RunPCA(mixcDNA.seu, npcs = 30, verbose = FALSE)
+mixcDNA.seu <- RunUMAP(mixcDNA.seu, reduction = "pca", dims = 1:30)
+mixcDNA.seu <- FindNeighbors(mixcDNA.seu, dims = 1:30, verbose = FALSE)
+mixcDNA.seu <- FindClusters(mixcDNA.seu, resolution= 0.5, verbose = FALSE)
+
+## Assignation of cluster names
+cell_labs <- plyr::mapvalues(x=mixcDNA.seu$seurat_clusters,
+                from=c(0,1,2,3),
+                to=c('H1', 'BJ', 'K562', 'GM12878'))
+mixcDNA.seu[['cell_labs']] <- cell_labs
+
+## Visualisation check
+DimPlot(mixcDNA.seu, 
+        reduction = 'umap', 
+        label = TRUE, 
+        group.by = 'cell_labs') + 
+            NoLegend()
+
+## creation of seurat objects
+mixcDNA.seu <- CreateSeuratObject(counts = mixcDNA, 
+                                  assay = 'mixCDNA')
+atac.Seu <- CreateSeuratObject(counts = atac,
+                                 assay = 'atac')
+
+## Preprocessing
+mixture <- list(mixcDNA.seu, atac.Seu)
+names(mixture) <- c('mix_mRNA', 'mix_chr')
+for (i in 1:length(mixture)){
+        mixture[[i]] <- NormalizeData(mixture[[i]])
+        mixture[[i]] <- FindVariableFeatures(mixture[[i]], 
+                                              selection.method = 'vst',
+                                              nfeatures = 1000)
+}
+## stanadard preprocessing gene expression
+mixture$mix_mRNA <- ScaleData(mixture$mix_mRNA, verbose = FALSE)
+mixture[[1]] <- RunPCA(mixture[[1]], npcs = 30, verbose = FALSE)
+mixture[[1]] <- RunUMAP(mixture[[1]], reduction = "pca", dims = 1:30)
+mixture[[1]] <- FindNeighbors(mixture[[1]], dims = 1:30, verbose = FALSE)
+mixture[[1]] <- FindClusters(mixture[[1]], resolution= 0.5, verbose = FALSE)
+
+## labeling
+mixture[[1]][['cell_labs']] <- cell_type$Ident
+
+## gene activity matrix
+activity.matrix <- CreateGeneActivityMatrix(
+        peak.matrix = GetAssayData(mixture[[2]], slot='counts'), 
+                annotation.file = "../data/Homo_sapiens.GRCh38.98.gtf.gz", 
+        seq.levels = c(1:22, "X", "Y"), 
+        upstream = 2000, 
+        verbose = TRUE
+)
+#saveRDS(activity.matrix, '../data/cell_lines_activity_matrix.RDS')
+#activity.matrix <- readRDS('../data/cell_lines_activity_matrix.RDS')
+## creation of the Seurat object containing scATAC counts
+cl_atac <- CreateSeuratObject(
+        counts = GetAssayData(mixture[[2]], slot = 'counts'),
+        assay = 'ATAC',
+        project = 'atac'
+)
+## Adding estimated gene activity matrix
+cl_atac[['activity']] <- CreateAssayObject(
+        counts = activity.matrix
+)
+cl_atac[['clust_ann']] <- cell_type$Ident
+DefaultAssay(cl_atac) <- 'activity'
+n_features = 3000
+n_pca_dims = 15
+cl_atac <- NormalizeData(cl_atac) %>%
+                FindVariableFeatures(selection.method = 'vst',
+                                     nfeatures = n_features)
+cl_atac <- ScaleData(cl_atac, 
+                      verbose = FALSE) %>% 
+        RunPCA(npcs = n_pca_dims, 
+               verbose = FALSE) %>%
+        RunUMAP(reduction = "pca", 
+                dims = 1:n_pca_dims) 
+mixture[[1]]$'clust_ann' <- cell_type$Ident
+cl_list <- list(mixture[[1]], cl_atac)
+anchors <- FindIntegrationAnchors(cl_list, dims = 1:20)
+integrated <- IntegrateData(anchorset = anchors,
+                                     dims = 1:20)
+
+# Visualisation of the integrated data
+DefaultAssay(integrated) <- "integrated"
+integrated <- ScaleData(integrated, 
+                        verbose = FALSE)
+integrated <- RunPCA(integrated, 
+                     npcs = 30, 
+                     verbose = FALSE)
+integrated <- RunUMAP(integrated, 
+                      reduction = "pca", 
+                      dims = 1:30)
+
+integrated$'datasets' <- sapply(integrated$orig.ident, function(x)
+                                ifelse( x == "SeuratProject" , 'mRNA', x))
+saveRDS(integrated, '../data/cell_lines_seurat_integrated.RDS')
+```
+
+```{r integration_plot, echo=FALSE, eval=FALSE}
+#saveRDS(cl_atac, '../data/cell_lines_atac_seurat.RDS')
+cl_atac <- readRDS('../data/cell_lines_atac_seurat.RDS')
+seurat_integration_plot <- DimPlot(cl_atac, reduction = 'umap', group.by = 'clust_ann')
+plot(seurat_integration_plot)
+```
+
+```{r embedding_plot, echo=FALSE, eval=FALSE}
+integrated <- readRDS('../data/cell_lines_seurat_integrated.RDS')
+seurat_embedding_plot <- DimPlot(integrated, group.by = 'datasets', reduction = 'umap', 
+        label = FALSE)
+plot(seurat_embedding_plot)
+```
+
+```{r seurat_plot, echo=FALSE, fig.width=7, fig.height=4}
+grid.arrange(seurat_integration_plot, seurat_embedding_plot, nrow=1)
+```
+
+
+
+
+
+
+## Cistopic 
+
+```{r cistopic, eval=FALSE}
+peak.sum=rowSums(atac)
+
+## Selects number of peaks bigger than 5 and less than 10 percent of 
+## the number of cells
+max.ratio=0.01
+min.peak=5
+peak.selected=rownames(atac)[peak.sum<ceiling(ncol(atac)*max.ratio) & peak.sum>min.peak]
+atac=atac[peak.selected,]
+atac[atac>1]=1
+
+cisTopicObject <- createcisTopicObject(atac, project.name='cell_lines_atac')
+
+## run cistopic
+cisTopicObject <- runModels(
+        cisTopicObject, 
+        topic=seq(20,30,by=5), 
+        seed=987, 
+        nCores=3, 
+        burnin = 100, 
+        iterations = 200
+)
+
+## model selection
+#logLikelihoodByIter(cisTopicObject)
+cisTopicObject <- selectModel(cisTopicObject)
+
+cisTopicObject <- runtSNE(
+        cisTopicObject, 
+        target='cell', 
+        perplexity=50, 
+        check_duplicates=FALSE
+)
+
+cell_lines_tsne=cisTopicObject@dr$cell$tSNE
+cell_lines_tsne=as.data.frame(cell_lines_tsne)
+cell_lines_tsne$'Barcode' <- rownames(cell_lines_tsne)
+head(cell_lines_tsne)
+
+cell_lines_tsne <- merge(cell_lines_tsne, cell_type)
+saveRDS(cell_lines_tsne, '../data/cell_lines_cistopic.RDS')
+```
+
+```{r cistopic_plot, echo=FALSE}
+cell_lines_tsne <- readRDS('../data/cell_lines_cistopic.RDS')
+cistopic_plot <- ggplot(cell_lines_tsne, 
+                        aes(x = tSNE1, y = tSNE2, colour = Ident)) +
+                           geom_point(alpha = .5) + 
+                        ggtitle('CISTOPIC') + 
+                        theme(title = element_text(size = 14, face = 'bold'))
+plot(cistopic_plot)
+```
+
+## Overview - RNA + ATAC integration
+
+```{r fig.width=7, fig.height=8, echo=FALSE}
+grid.arrange(satsne_plot,
+             nmf_plot,
+             mv_plot,
+             cistopic_plot,
+             seurat_integration_plot + ggtitle('SEURAT INTEGRATION'), 
+             seurat_embedding_plot + ggtitle('SEURAT EMBEDDING'),
+             nrow=3)
+```
+
+## TODO:
+
+
+* Test neonatal data (~5,000 cells).
+
+* Test SNAPATAC (and SNAPTOOLS).

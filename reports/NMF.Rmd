@@ -1,0 +1,123 @@
+---
+title: "Non negative matrix Factorization"
+author: "Health Data Science Unit"
+date: "1/9/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE, message=FALSE, warning=FALSE, echo=FALSE}
+library(Bratwurst)
+library(ggplot2)
+library(knitr)
+library(Rtsne)
+library(gridExtra)
+library(Seurat)
+library(Matrix)
+library(cisTopic)
+library(dplyr)
+library(DESeq2)
+
+knitr::opts_chunk$set(
+        warning = FALSE,
+        message = FALSE,
+        cache = TRUE,
+        cache.lazy = FALSE
+)
+
+theme_set(theme_light())
+```
+
+# Human cell lines mixture
+
+
+```{r loading_data, eval=FALSE}
+##############################################################################################
+## Cells Mixture RNA
+rna <- read.table('~/sc/singleCellDeconvolution/data/chenS2019sameCellsData/GSE126074_CellLineMixture_SNAREseq_cDNA_counts.tsv',
+                      sep = '\t',
+                      stringsAsFactors = FALSE) 
+
+##############################################################################################
+
+## Cells Mixture chromatin
+atac <- read.table('~/sc/singleCellDeconvolution/data/chenS2019sameCellsData/GSE126074_CellLineMixture_SNAREseq_chromatin_counts.tsv',
+                      sep = '\t',
+                      stringsAsFactors = FALSE) 
+
+cell_type <- read.table('../data/cell_lines_metadata.tsv', header = TRUE)
+```
+
+
+```{r normalization, eval=FALSE}
+## normalization using DESeq2
+deseq2_norm <- function(count_matrix){
+        
+        sf <- estimateSizeFactorsForMatrix(count_matrix+ 1)
+        counts.m <- t(t(count_matrix)/sf)
+        
+        # transform to log2
+        norm_matrix <- apply(counts.m + 1, 2, log2)
+        
+        return(norm_matrix)
+}
+
+rna_norm <- deseq2_norm(rna)
+atac_norm <- deseq2_norm(atac)
+```
+
+```{r nmf, eval=FALSE}
+## to be run in dkfz
+multiview <- list(rna = rna_norm, atac = atac_norm)
+
+k.min <- 4
+k.max <- 7
+outer.iter <- 5
+inner.iter <- 2*10^4
+
+int.nmf.exp <- run_integrative_NMF_tensor(multiview, 
+                                          k_min = k.min, 
+                                          k_max = k.max, 
+                                          outer_iter = outer.iter, 
+                                          inner_iter = inner.iter, 
+                                          conver_stop_threshold = 40, 
+                                          lambda=0.005)
+
+saveRDS(int.nmf.exp, '../data/nmf_cell_lines.RDS')
+
+```
+
+```{r umap}
+## reading nmf results
+nmf <- readRDS('../data/int.nmf.exp.RDS')
+## adding metadata
+tags <- read.table('../data/cell_lines_metadata.tsv', header = TRUE)
+
+## rna umap
+H_view_spec_rna <- nmf@view_specific_NMFexp_list$rna@HMatrixList$`7`$`5`
+H_view_spec_rna.umap <- uwot::umap(t(H_view_spec_rna))
+
+## atac umap
+H_view_spec_atac <- nmf@view_specific_NMFexp_list$atac@HMatrixList$`7`$`5`
+H_view_spec_atac.umap <- uwot::umap(t(H_view_spec_atac))
+```
+
+```{r plot, fig.width=10}
+## rna
+rna_umap_df <- cbind(as.data.frame(H_view_spec_rna.umap), tags)
+colnames(rna_umap_df) <- c('UMAP1', 'UMAP2', colnames(tags))
+rna_nmf_plot <- ggplot(rna_umap_df, aes(x = UMAP1, y = UMAP2, colour=Ident)) + 
+                      geom_point(alpha = 0.5) + 
+                      ggtitle('NMF RNA H View specific') +
+                      theme(title = element_text(face = 'bold', size = 16))
+
+## atac
+atac_umap_df <- cbind(as.data.frame(H_view_spec_atac.umap), tags)
+colnames(atac_umap_df) <- c('UMAP1', 'UMAP2', colnames(tags))
+atac_nmf_plot <- ggplot(atac_umap_df, aes(x = UMAP1, y = UMAP2, colour=Ident)) + 
+                      geom_point(alpha = 0.5) + 
+                      ggtitle('NMF atac H View specific') +
+                      theme(title = element_text(face = 'bold', size = 16))
+
+grid.arrange(rna_nmf_plot, atac_nmf_plot, nrow = 1)
+```
+
