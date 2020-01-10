@@ -6,7 +6,6 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE, message=FALSE, warning=FALSE, echo=FALSE}
-library(Bratwurst)
 library(ggplot2)
 library(knitr)
 library(Rtsne)
@@ -43,7 +42,9 @@ rna <- read.table('~/sc/singleCellDeconvolution/data/chenS2019sameCellsData/GSE1
 atac <- read.table('~/sc/singleCellDeconvolution/data/chenS2019sameCellsData/GSE126074_CellLineMixture_SNAREseq_chromatin_counts.tsv',
                       sep = '\t',
                       stringsAsFactors = FALSE) 
+```
 
+```{r load_annotations, echo=FALSE}
 cell_type <- read.table('../data/cell_lines_metadata.tsv', header = TRUE)
 ```
 
@@ -62,11 +63,16 @@ deseq2_norm <- function(count_matrix){
 }
 
 rna_norm <- deseq2_norm(rna)
+saveRDS(rna_norm, '../data/cell_lines_rna_norm.RDS')
 atac_norm <- deseq2_norm(atac)
+saveRDS(atac_norm, '../data/cell_lines_atac_norm.RDS')
 ```
 
+
+## NMF
+
 ```{r nmf, eval=FALSE}
-## to be run in dkfz
+## to be run in dkfz server
 multiview <- list(rna = rna_norm, atac = atac_norm)
 
 k.min <- 4
@@ -83,26 +89,30 @@ int.nmf.exp <- run_integrative_NMF_tensor(multiview,
                                           lambda=0.005)
 
 saveRDS(int.nmf.exp, '../data/nmf_cell_lines.RDS')
-
 ```
 
-```{r umap}
+```{r loading_nmf_results, echo=FALSE}
 ## reading nmf results
 nmf <- readRDS('../data/int.nmf.exp.RDS')
+H_view_spec_rna <- nmf@view_specific_NMFexp_list$rna@HMatrixList$`7`$`5`
+H_view_spec_atac <- nmf@view_specific_NMFexp_list$atac@HMatrixList$`7`$`5`
 ## adding metadata
 tags <- read.table('../data/cell_lines_metadata.tsv', header = TRUE)
+```
 
+```{r umap_on_nmf_output, eval=FALSE}
 ## rna umap
-H_view_spec_rna <- nmf@view_specific_NMFexp_list$rna@HMatrixList$`7`$`5`
 H_view_spec_rna.umap <- uwot::umap(t(H_view_spec_rna))
+#saveRDS(H_view_spec_rna.umap, '../data/H_view_rna_umap.RDS')
 
 ## atac umap
-H_view_spec_atac <- nmf@view_specific_NMFexp_list$atac@HMatrixList$`7`$`5`
 H_view_spec_atac.umap <- uwot::umap(t(H_view_spec_atac))
+#saveRDS(H_view_spec_atac.umap, '../data/H_view_atac_umap.RDS')
 ```
 
 ```{r plot, fig.width=10}
 ## rna
+H_view_spec_rna.umap <- readRDS('../data/H_view_rna_umap.RDS')
 rna_umap_df <- cbind(as.data.frame(H_view_spec_rna.umap), tags)
 colnames(rna_umap_df) <- c('UMAP1', 'UMAP2', colnames(tags))
 rna_nmf_plot <- ggplot(rna_umap_df, aes(x = UMAP1, y = UMAP2, colour=Ident)) + 
@@ -111,6 +121,7 @@ rna_nmf_plot <- ggplot(rna_umap_df, aes(x = UMAP1, y = UMAP2, colour=Ident)) +
                       theme(title = element_text(face = 'bold', size = 16))
 
 ## atac
+H_view_spec_atac.umap <- readRDS('../data/H_view_atac_umap.RDS')
 atac_umap_df <- cbind(as.data.frame(H_view_spec_atac.umap), tags)
 colnames(atac_umap_df) <- c('UMAP1', 'UMAP2', colnames(tags))
 atac_nmf_plot <- ggplot(atac_umap_df, aes(x = UMAP1, y = UMAP2, colour=Ident)) + 
@@ -121,3 +132,217 @@ atac_nmf_plot <- ggplot(atac_umap_df, aes(x = UMAP1, y = UMAP2, colour=Ident)) +
 grid.arrange(rna_nmf_plot, atac_nmf_plot, nrow = 1)
 ```
 
+```{r rna_umap, eval=FALSE}
+## Gene expression
+rna_umap <- uwot::umap(t(rna_norm), metric = 'cosine')
+saveRDS(rna_umap, '../data/cell_lines_rna_umap.RDS')
+rna_df <- cbind(as.data.frame(rna_umap), cell_type)
+rna_umap_plot <- ggplot(rna_df, aes(x = V1, y = V2, colour = Ident)) + geom_point(alpha=0.5) +     
+               theme(legend.position = 'none') + ggtitle('Gene expression')
+rna_umap_plot
+```
+
+```{r atac_cistopic, eval=FALSE}
+peak.sum=rowSums(atac)
+
+## Selects number of peaks bigger than 5 and less than 10 percent of 
+## the number of cells
+max.ratio=0.01
+min.peak=5
+peak.selected=rownames(atac)[peak.sum<ceiling(ncol(atac)*max.ratio) & peak.sum>min.peak]
+atac=atac[peak.selected,]
+atac[atac>1]=1
+
+cisTopicObject <- createcisTopicObject(atac, project.name='cell_lines_atac')
+
+## run cistopic
+cisTopicObject <- runModels(
+        cisTopicObject, 
+        topic=seq(20,30,by=5), 
+        seed=987, 
+        nCores=3, 
+        burnin = 100, 
+        iterations = 200
+)
+
+## model selection
+#logLikelihoodByIter(cisTopicObject)
+cisTopicObject <- selectModel(cisTopicObject)
+
+cisTopicObject <- runtSNE(
+        cisTopicObject, 
+        target='cell', 
+        perplexity=50, 
+        check_duplicates=FALSE
+)
+
+cell_lines_tsne=cisTopicObject@dr$cell$tSNE
+cell_lines_tsne=as.data.frame(cell_lines_tsne)
+cell_lines_tsne$'Barcode' <- rownames(cell_lines_tsne)
+head(cell_lines_tsne)
+
+cell_lines_tsne <- merge(cell_lines_tsne, cell_type)
+saveRDS(cell_lines_tsne, '../data/cell_lines_cistopic.RDS')
+```
+
+```{r cistopic_plot, echo=FALSE, eval=FALSE}
+cell_lines_tsne <- readRDS('../data/cell_lines_cistopic.RDS')
+cistopic_plot <- ggplot(cell_lines_tsne, 
+                        aes(x = tSNE1, y = tSNE2, colour = Ident)) +
+                           geom_point(alpha = .5) + 
+                        ggtitle('CISTOPIC') + 
+                        theme(title = element_text(size = 14, face = 'bold'))
+plot(cistopic_plot)
+```
+
+## NMF coupled to SATSNE
+
+```{r satsne, eval=FALSE}
+## use exposure matrix as SATSNE input shared matrix
+rna_umap <- readRDS('../data/cell_lines_rna_umap.RDS')
+atac_cistopic <- readRDS('../data/cell_lines_cistopic.RDS')
+cell_type <- read.table('../data/cell_lines_metadata.tsv', header = TRUE)
+
+## SATSNE parameters
+nk1=10 #nns in data1
+nk2=10 #nns in data2
+L1=10#8
+L2=10#8
+n1<-nrow(H_view_spec_rna.umap)
+n2<-nrow(H_view_spec_rna.umap)
+perplex_in1=min(floor(n1/5),250) #130
+perplex_in2=min(floor(n2/5),250)
+perplex_fin=30
+perplex_steps=0.8
+no.initiations=1
+
+## Loading dependencies
+source('~/sc/SATSNE2019/code/d2p.R')
+source('~/sc/SATSNE2019/code/satsne_p.R')
+source('~/sc/SATSNE2019/code/satsne_annealing.R')
+
+## SATSNE unannealed 
+satsne_unaligned <- satsne_annealing (X10 = H_view_spec_rna.umap, X20 = H_view_spec_atac.umap,  
+                           labels1=cell_type$Ident, 
+                           labels2=cell_type$Ident,
+                           nk1=nk1, nk2=nk2, 
+                           L1=L1, L2=L2, no_dims=2,
+                           perplex_in1=perplex_in1,
+                           perplex_in2=perplex_in2, 
+                           perplex_fin=perplex_fin, 
+                           perplex_steps=perplex_steps,
+                           no.initiations=no.initiations, 
+                           Y1_init=NULL,Y2_init=NULL, 
+                           max_iter = 200)
+
+saveRDS(satsne_unaligned, '../data/cell_lines_nmf_satsne_unaligned.RDS')
+```
+
+```{r aux_plot_funs, echo=FALSE}
+## satsne_out is the output of satsne
+## annotations must contain a column called Ident with cell categories
+plot_satsne <- function(satsne_out=NULL, annotations=NULL,
+                        plot_tittle1='RNA', plot_tittle2 = 'ATAC')
+        {
+        if ( is.null(satsne_out) | is.null(annotations)) {
+                stop('Missing satsne_out or annotations parameters')
+        }
+        nmfsatsne1 <- cbind(as.data.frame(satsne_out$Y1), annotations)
+        nmfsatsne2 <- cbind(as.data.frame(satsne_out$Y2), annotations)
+        
+        ## y1
+        y1 <- ggplot(nmfsatsne1,
+               aes(x = V1, y = V2, colour = Ident)) + 
+                  geom_point() + ggtitle(plot_tittle1)
+        ## y2
+        y2 <- ggplot(nmfsatsne2,
+               aes(x = V1, y = V2, colour = Ident)) + 
+                  geom_point() + ggtitle(plot_tittle2)
+
+        return(grid.arrange(y1, y2, nrow= 1))
+}
+```
+
+## Unaligned
+
+```{r nmfsatsne_unaligned, fig.width=10}
+unaligned_satsne <- readRDS('../data/cell_lines_nmf_satsne_unaligned.RDS')
+plot_satsne(unaligned_satsne, cell_type)
+```
+
+## Alignment with NMF H Specific Views
+
+```{r aligned_run, eval=FALSE}
+## assign 1 to the highest signature
+binarize_exposures <- function(exposure_matrix) {
+        bin <- matrix(0, nrow(exposure_matrix), ncol(exposure_matrix))
+        indexes <- apply(exposure_matrix, 2, which.max) 
+        for (i in 1:ncol(exposure_matrix)) {
+                bin[indexes[i], i] <- 1
+        }
+        return(bin)
+}
+
+bin_atac <- binarize_exposures(H_view_spec_atac)
+bin_rna <- binarize_exposures(H_view_spec_rna)
+signatures <- apply(H_view_spec_atac, 2, which.max) %>% as.factor()
+relabeled_unaliged_atac <- cbind(as.data.frame(unaligned_satsne$Y2), signatures)
+names(relabeled_unaliged_atac) <- c('umap1', 'umap2', 'signatures')
+ggplot(relabeled_unaliged_atac, aes(x = umap1, y = umap2, colour = signatures)) +
+           geom_point(alpha=0.5) 
+
+## SATSNE annealed
+satsne_aligned <- satsne_annealing (X10 = H_view_spec_rna.umap, X20 = H_view_spec_atac.umap, 
+                           X1shared = H_view_spec_rna.umap, X2shared = H_view_spec_atac.umap,
+                           labels1=cell_type$Ident, 
+                           labels2=cell_type$Ident,
+                           nk1=nk1, nk2=nk2, 
+                           L1=L1, L2=L2, no_dims=2,
+                           perplex_in1=perplex_in1,
+                           perplex_in2=perplex_in2, 
+                           perplex_fin=perplex_fin, 
+                           perplex_steps=perplex_steps,
+                           no.initiations=no.initiations, 
+                           Y1_init=NULL,Y2_init=NULL, 
+                           max_iter = 200)
+
+saveRDS(satsne_aligned, '../data/cell_lines_nmf_satsne_aligned.RDS')
+```
+
+```{r nmfsatsne_aligned, fig.width=10, echo=FALSE}
+aligned_satsne <- readRDS('../data/cell_lines_nmf_satsne_aligned.RDS')
+plot_satsne(aligned_satsne, cell_type)
+```
+
+## Relabelling ATAC NMF H View using binarized signatures
+
+```{r relabelling}
+## assign 1 to the highest signature
+binarize_exposures <- function(exposure_matrix) {
+        bin <- matrix(0, nrow(exposure_matrix), ncol(exposure_matrix))
+        indexes <- apply(exposure_matrix, 2, which.max) 
+        for (i in 1:ncol(exposure_matrix)) {
+                bin[indexes[i], i] <- 1
+        }
+        return(bin)
+}
+
+bin_atac <- binarize_exposures(H_view_spec_atac)
+signatures <- apply(H_view_spec_atac, 2, which.max) %>% as.factor()
+relabeled_unaliged_atac <- cbind(as.data.frame(unaligned_satsne$Y2), signatures)
+names(relabeled_unaliged_atac) <- c('umap1', 'umap2', 'signatures')
+ggplot(relabeled_unaliged_atac, aes(x = umap1, y = umap2, colour = signatures)) +
+           geom_point(alpha=0.5) 
+```
+
+## Relabelling cistopic using binarized signatures
+
+```{r cistopic_relabeled, echo=FALSE}
+cell_lines_tsne <- readRDS('../data/cell_lines_cistopic.RDS')
+cistopic_plot <- ggplot(cell_lines_tsne, 
+                        aes(x = tSNE1, y = tSNE2, colour = signatures)) +
+                           geom_point(alpha = .5) + 
+                        ggtitle('CISTOPIC') + 
+                        theme(title = element_text(size = 14, face = 'bold'))
+plot(cistopic_plot)
+```
