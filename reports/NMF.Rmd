@@ -1,7 +1,7 @@
 ---
-title: "Non negative matrix Factorization"
+title: "NMF-SATSNE coupling"
 author: "Health Data Science Unit"
-date: "1/9/2020"
+date: "{r date()}"
 output: html_document
 ---
 
@@ -142,7 +142,7 @@ rna_umap_plot <- ggplot(rna_df, aes(x = V1, y = V2, colour = Ident)) + geom_poin
 rna_umap_plot
 ```
 
-```{r atac_cistopic, eval=FALSE}
+```{r atac_cistopic, eval=FALSE, echo=FALSE}
 peak.sum=rowSums(atac)
 
 ## Selects number of peaks bigger than 5 and less than 10 percent of 
@@ -197,10 +197,16 @@ plot(cistopic_plot)
 
 ## NMF coupled to SATSNE
 
+```{r load_umaps, echo=FALSE}
+## rna umap
+H_view_spec_rna.umap <- readRDS('../data/H_view_rna_umap.RDS')
+
+## atac umap
+H_view_spec_atac.umap <- readRDS('../data/H_view_atac_umap.RDS')
+```
+
 ```{r satsne, eval=FALSE}
 ## use exposure matrix as SATSNE input shared matrix
-rna_umap <- readRDS('../data/cell_lines_rna_umap.RDS')
-atac_cistopic <- readRDS('../data/cell_lines_cistopic.RDS')
 cell_type <- read.table('../data/cell_lines_metadata.tsv', header = TRUE)
 
 ## SATSNE parameters
@@ -265,7 +271,7 @@ plot_satsne <- function(satsne_out=NULL, annotations=NULL,
 
 ## Unaligned
 
-```{r nmfsatsne_unaligned, fig.width=10}
+```{r nmfsatsne_unaligned, fig.width=10, echo=FALSE}
 unaligned_satsne <- readRDS('../data/cell_lines_nmf_satsne_unaligned.RDS')
 plot_satsne(unaligned_satsne, cell_type)
 ```
@@ -273,27 +279,18 @@ plot_satsne(unaligned_satsne, cell_type)
 ## Alignment with NMF H Specific Views
 
 ```{r aligned_run, eval=FALSE}
-## assign 1 to the highest signature
-binarize_exposures <- function(exposure_matrix) {
-        bin <- matrix(0, nrow(exposure_matrix), ncol(exposure_matrix))
-        indexes <- apply(exposure_matrix, 2, which.max) 
-        for (i in 1:ncol(exposure_matrix)) {
-                bin[indexes[i], i] <- 1
-        }
-        return(bin)
+## pertenency matrix construction
+cell_types <- unique(cell_type$Ident)
+shared <- matrix(0, length(cell_type$Ident), length(cell_types))
+colnames(shared) <- cell_types
+for (i in 1:nrow(shared)){
+        cell_type_index <- which(cell_type$Ident[i]==cell_types) 
+        shared[i, cell_type_index] <- 1
 }
-
-bin_atac <- binarize_exposures(H_view_spec_atac)
-bin_rna <- binarize_exposures(H_view_spec_rna)
-signatures <- apply(H_view_spec_atac, 2, which.max) %>% as.factor()
-relabeled_unaliged_atac <- cbind(as.data.frame(unaligned_satsne$Y2), signatures)
-names(relabeled_unaliged_atac) <- c('umap1', 'umap2', 'signatures')
-ggplot(relabeled_unaliged_atac, aes(x = umap1, y = umap2, colour = signatures)) +
-           geom_point(alpha=0.5) 
 
 ## SATSNE annealed
 satsne_aligned <- satsne_annealing (X10 = H_view_spec_rna.umap, X20 = H_view_spec_atac.umap, 
-                           X1shared = H_view_spec_rna.umap, X2shared = H_view_spec_atac.umap,
+                           X1shared = shared, X2shared = shared,
                            labels1=cell_type$Ident, 
                            labels2=cell_type$Ident,
                            nk1=nk1, nk2=nk2, 
@@ -309,40 +306,11 @@ satsne_aligned <- satsne_annealing (X10 = H_view_spec_rna.umap, X20 = H_view_spe
 saveRDS(satsne_aligned, '../data/cell_lines_nmf_satsne_aligned.RDS')
 ```
 
+## Aligned
+
+
 ```{r nmfsatsne_aligned, fig.width=10, echo=FALSE}
 aligned_satsne <- readRDS('../data/cell_lines_nmf_satsne_aligned.RDS')
 plot_satsne(aligned_satsne, cell_type)
 ```
 
-## Relabelling ATAC NMF H View using binarized signatures
-
-```{r relabelling}
-## assign 1 to the highest signature
-binarize_exposures <- function(exposure_matrix) {
-        bin <- matrix(0, nrow(exposure_matrix), ncol(exposure_matrix))
-        indexes <- apply(exposure_matrix, 2, which.max) 
-        for (i in 1:ncol(exposure_matrix)) {
-                bin[indexes[i], i] <- 1
-        }
-        return(bin)
-}
-
-bin_atac <- binarize_exposures(H_view_spec_atac)
-signatures <- apply(H_view_spec_atac, 2, which.max) %>% as.factor()
-relabeled_unaliged_atac <- cbind(as.data.frame(unaligned_satsne$Y2), signatures)
-names(relabeled_unaliged_atac) <- c('umap1', 'umap2', 'signatures')
-ggplot(relabeled_unaliged_atac, aes(x = umap1, y = umap2, colour = signatures)) +
-           geom_point(alpha=0.5) 
-```
-
-## Relabelling cistopic using binarized signatures
-
-```{r cistopic_relabeled, echo=FALSE}
-cell_lines_tsne <- readRDS('../data/cell_lines_cistopic.RDS')
-cistopic_plot <- ggplot(cell_lines_tsne, 
-                        aes(x = tSNE1, y = tSNE2, colour = signatures)) +
-                           geom_point(alpha = .5) + 
-                        ggtitle('CISTOPIC') + 
-                        theme(title = element_text(size = 14, face = 'bold'))
-plot(cistopic_plot)
-```

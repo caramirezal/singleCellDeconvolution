@@ -1,6 +1,8 @@
 ---
 title: "Gene expression + ATAC data integration"
-output: html_notebook
+author: "Health Data Science Unit"
+date: "{r date()}"
+output: html_document
 ---
 
 ```{r setup, include=FALSE, message=FALSE, warning=FALSE, echo=FALSE}
@@ -26,7 +28,7 @@ theme_set(theme_light())
 # Human cell lines mixture
 
 
-```{r loading_data}
+```{r loading_data, eval=FALSE}
 ##############################################################################################
 ## Cells Mixture RNA
 rna <- read.table('~/sc/singleCellDeconvolution/data/chenS2019sameCellsData/GSE126074_CellLineMixture_SNAREseq_cDNA_counts.tsv',
@@ -59,14 +61,25 @@ deseq2_norm <- function(count_matrix){
 
 rna_norm <- deseq2_norm(rna)
 atac_norm <- deseq2_norm(atac)
+## save normalized data
+saveRDS(rna_norm, '../data/cell_lines_rna_norm.RDS')
+saveRDS(atac_norm, '../data/cell_lines_atac_norm.RDS')
 ```
 
 
 ## mRNA & ATAC Clustering
 
 ```{r rna_umap}
-## Gene expression
-rna_umap <- uwot::umap(t(rna_norm), metric = 'cosine')
+## Loading normalized data
+rna_norm <- readRDS('../data/cell_lines_rna_norm.RDS')
+atac_norm <- readRDS('../data/cell_lines_atac_norm.RDS')
+
+## Run UMAP
+#rna_umap <- uwot::umap(t(rna_norm), metric = 'cosine')
+#saveRDS(rna_umap, '../data/cell_lines_rna_umap.RDS')
+
+## Loading precalculated umap and plotting
+rna_umap <- readRDS('../data/cell_lines_rna_umap.RDS')
 rna_df <- cbind(as.data.frame(rna_umap), cell_type)
 rna_plot <- ggplot(rna_df, aes(x = V1, y = V2, colour = Ident)) + geom_point(alpha=0.5) +     
                theme(legend.position = 'none') + ggtitle('Gene expression')
@@ -98,7 +111,7 @@ cisTopicObject <- runModels(
 )
 
 ## model selection
-logLikelihoodByIter(cisTopicObject)
+#logLikelihoodByIter(cisTopicObject)
 cisTopicObject <- selectModel(cisTopicObject)
 
 cisTopicObject <- runtSNE(
@@ -110,10 +123,9 @@ cisTopicObject <- runtSNE(
 
 cell_lines_tsne=cisTopicObject@dr$cell$tSNE
 cell_lines_tsne=as.data.frame(cell_lines_tsne)
-cell_lines_tsne$'Barcode' <- rownames(cell_lines_tsne)
+cell_lines_tsne <- cbind(cell_lines_tsne, cell_type)
 head(cell_lines_tsne)
 
-cell_lines_tsne <- merge(cell_lines_tsne, cell_type)
 saveRDS(cell_lines_tsne, '../data/cell_lines_cistopic.RDS')
 ```
 
@@ -129,6 +141,7 @@ plot(cistopic_plot)
 
 ## SATSNE
 
+
 ```{r satsne, results='as.is'}
 nk1=10 #nns in data1
 nk2=10 #nns in data2
@@ -136,6 +149,7 @@ L1=10#8
 L2=10#8
 
 ## pertenency matrix construction
+cell_labs <- cell_lines_tsne$Ident
 cell_types <- unique(cell_labs)
 shared <- matrix(0, length(cell_labs), length(cell_types))
 colnames(shared) <- cell_types
@@ -144,8 +158,9 @@ for (i in 1:nrow(shared)){
         shared[i, cell_type_index] <- 1
 }
 
-n1<-nrow(rna_pca)
-n2<-nrow(atac_pca)
+cistopic_tsne <- cell_lines_tsne[, c('tSNE1', 'tSNE2')]
+n1<-nrow(rna_umap)
+n2<-nrow(cistopic_tsne)
 perplex_in1=min(floor(n1/5),250) #130
 perplex_in2=min(floor(n2/5),250)
 perplex_fin=30
@@ -155,15 +170,10 @@ no.initiations=1
 source('~/sc/SATSNE2019/code/d2p.R')
 source('~/sc/SATSNE2019/code/satsne_p.R')
 source('~/sc/SATSNE2019/code/satsne_annealing.R')
-```
 
-
-
-```{r umap_satsne}
-tsneX <- satsne_annealing (X10 = rna_umap, X20 = atac_umap, 
-                           X1shared = shared, X2shared = shared,
+tsneX <- satsne_annealing (X10 = rna_umap, X20 = cistopic_tsne,
                            labels1=cell_type$Ident, 
-                           labels2=cell_type$Ident,
+                           labels2=cell_lines_tsne$Ident,
                            nk1=nk1, nk2=nk2, 
                            L1=L1, L2=L2, no_dims=2,
                            perplex_in1=perplex_in1,
@@ -175,24 +185,37 @@ tsneX <- satsne_annealing (X10 = rna_umap, X20 = atac_umap,
                            max_iter = 200, do.plot=TRUE)
 ```
 
-```{r cistopic_satsne}
-cistopic_output <- readRDS('../data/cell_lines_cistopic.RDS')
-cistopic.m <- as.matrix(cistopic_output[, 1:2])
-tsneX <- satsne_annealing (X10 = rna_umap, X20 = cistopic.m, 
-                           X1shared = shared, X2shared = shared,
-                           labels1=cell_type$Ident, 
-                           labels2=cell_type$Ident,
-                           nk1=nk1, nk2=nk2, 
-                           L1=L1, L2=L2, no_dims=2,
-                           perplex_in1=perplex_in1,
-                           perplex_in2=perplex_in2, 
-                           perplex_fin=perplex_fin, 
-                           perplex_steps=perplex_steps,
-                           no.initiations=no.initiations, 
-                           Y1_init=NULL,Y2_init=NULL, 
-                           max_iter = 200, do.plot=TRUE)
+```{r vis_fun}
+plot_satsne <- function(satsne_out=NULL, annotations=NULL,
+                        labels1, labels2,
+                        plot_tittle1='RNA', plot_tittle2 = 'ATAC')
+        {
+        
+        nmfsatsne1 <- cbind(as.data.frame(satsne_out$Y1), 'labels' = labels1)
+        nmfsatsne2 <- cbind(as.data.frame(satsne_out$Y2), 'labels' = labels2)
+        
+        ## y1
+        y1 <- ggplot(nmfsatsne1,
+               aes(x = V1, y = V2, colour = labels)) + 
+                  geom_point() + ggtitle(plot_tittle1)
+        ## y2
+        y2 <- ggplot(nmfsatsne2,
+               aes(x = V1, y = V2, colour = labels)) + 
+                  geom_point() + ggtitle(plot_tittle2)
+
+        return(grid.arrange(y1, y2, nrow= 1))
+}
 ```
 
+```{r}
+plot_satsne(tsneX, labels1 = cell_type$Ident, labels2 = cell_type$Ident)
+```
+
+```{r}
+g_df <- cbind(as.data.frame(tsneX$Y2), 'Ident'= cell_type)
+ggplot(g_df, aes(V1, V2, colour= Ident.Ident)) + geom_point()
+
+```
 
 
 **NOTES**:
@@ -403,7 +426,7 @@ grid.arrange(seurat_integration_plot, seurat_embedding_plot, nrow=1)
 
 ## Cistopic 
 
-```{r cistopic, eval=FALSE}
+```{r cistopic_run, eval=FALSE}
 peak.sum=rowSums(atac)
 
 ## Selects number of peaks bigger than 5 and less than 10 percent of 
@@ -446,7 +469,7 @@ cell_lines_tsne <- merge(cell_lines_tsne, cell_type)
 saveRDS(cell_lines_tsne, '../data/cell_lines_cistopic.RDS')
 ```
 
-```{r cistopic_plot, echo=FALSE}
+```{r cistopic_plot_test, echo=FALSE}
 cell_lines_tsne <- readRDS('../data/cell_lines_cistopic.RDS')
 cistopic_plot <- ggplot(cell_lines_tsne, 
                         aes(x = tSNE1, y = tSNE2, colour = Ident)) +
