@@ -110,7 +110,7 @@ H_view_spec_atac.umap <- uwot::umap(t(H_view_spec_atac))
 #saveRDS(H_view_spec_atac.umap, '../data/H_view_atac_umap.RDS')
 ```
 
-```{r plot, fig.width=10}
+```{r plot, fig.width=10, echo=FALSE}
 ## rna
 H_view_spec_rna.umap <- readRDS('../data/H_view_rna_umap.RDS')
 rna_umap_df <- cbind(as.data.frame(H_view_spec_rna.umap), tags)
@@ -132,7 +132,7 @@ atac_nmf_plot <- ggplot(atac_umap_df, aes(x = UMAP1, y = UMAP2, colour=Ident)) +
 grid.arrange(rna_nmf_plot, atac_nmf_plot, nrow = 1)
 ```
 
-```{r rna_umap, eval=FALSE}
+```{r rna_umap, eval=FALSE, echo=FALSE}
 ## Gene expression
 rna_umap <- uwot::umap(t(rna_norm), metric = 'cosine')
 saveRDS(rna_umap, '../data/cell_lines_rna_umap.RDS')
@@ -142,7 +142,7 @@ rna_umap_plot <- ggplot(rna_df, aes(x = V1, y = V2, colour = Ident)) + geom_poin
 rna_umap_plot
 ```
 
-```{r atac_cistopic, eval=FALSE}
+```{r atac_cistopic, eval=FALSE, echo=FALSE}
 peak.sum=rowSums(atac)
 
 ## Selects number of peaks bigger than 5 and less than 10 percent of 
@@ -199,8 +199,8 @@ plot(cistopic_plot)
 
 ```{r satsne, eval=FALSE}
 ## use exposure matrix as SATSNE input shared matrix
-rna_umap <- readRDS('../data/cell_lines_rna_umap.RDS')
-atac_cistopic <- readRDS('../data/cell_lines_cistopic.RDS')
+#rna_umap <- readRDS('../data/cell_lines_rna_umap.RDS')
+#atac_cistopic <- readRDS('../data/cell_lines_cistopic.RDS')
 cell_type <- read.table('../data/cell_lines_metadata.tsv', header = TRUE)
 
 ## SATSNE parameters
@@ -265,7 +265,7 @@ plot_satsne <- function(satsne_out=NULL, annotations=NULL,
 
 ## Unaligned
 
-```{r nmfsatsne_unaligned, fig.width=10}
+```{r nmfsatsne_unaligned, fig.width=10, echo=FALSE}
 unaligned_satsne <- readRDS('../data/cell_lines_nmf_satsne_unaligned.RDS')
 plot_satsne(unaligned_satsne, cell_type)
 ```
