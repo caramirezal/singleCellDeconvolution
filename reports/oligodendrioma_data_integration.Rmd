@@ -1,0 +1,69 @@
+---
+title: "Oligodendroglioma data integration"
+author: "Health Data Science Unit"
+date: "{r date()}"
+output: html_document
+---
+
+```{r setup}
+## dependencies
+library(dplyr)
+library(uwot)
+library(Seurat)
+
+knitr::opts_chunk$set(cache = TRUE)
+```
+
+```{r}
+## loading Tirosh et, 2016 data. GSE70630  
+## https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE102130
+idh_oligo <- read.table('~/sc/singleCellDeconvolution/data/GSE70630_OG_processed_data_v2.txt')
+dim(idh_oligo)
+
+## loading Filbin et, 2018. GSE70630
+## https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE70630
+h3k27m_glioma <- read.table('~/sc/singleCellDeconvolution/data/GSE102130_K27Mproject.RSEM.vh20170621.txt',
+                            header = TRUE)
+row.names(h3k27m_glioma) <- h3k27m_glioma$Gene
+h3k27m_glioma <- select(h3k27m_glioma, -Gene)
+dim(h3k27m_glioma) 
+```
+
+```{r standard preprocessing}
+idh_oligo.seu <- CreateSeuratObject(counts = idh_oligo, project = 'idh glioma', 
+                                    min.cells = 1, min.features = 1)
+h3k27m_glioma.seu <- CreateSeuratObject(counts = h3k27m_glioma, project = 'h3k27', 
+                                        min.cells = 1, min.features = 1)
+
+gliomas <- list(idh_oligo.seu, h3k27m_glioma.seu)
+
+for (i in 1:length(gliomas)) {
+        gliomas[[i]] <- NormalizeData(gliomas[[i]], verbose =  FALSE)
+        gliomas[[i]] <- FindVariableFeatures(gliomas[[i]], selection.method = 'vst',
+                                             nfeatures = 2000, verbose = FALSE)
+}
+```
+
+
+```{r}
+gliomas.anchors <- FindIntegrationAnchors(object.list = gliomas, dims = 1:50)
+gliomas.integrated <- IntegrateData(anchorset = gliomas.anchors, dims = 1:50)
+DefaultAssay(gliomas.integrated) <- "integrated"
+
+# Run the standard workflow for visualization and clustering
+gliomas.integrated <- ScaleData(gliomas.integrated, verbose = FALSE)
+gliomas.integrated <- RunPCA(gliomas.integrated, npcs = 50, verbose = FALSE)
+gliomas.integrated <- RunUMAP(gliomas.integrated, reduction = "pca", dims = 1:50)
+```
+
+```{r}
+gliomas.integrated <- FindNeighbors(gliomas.integrated, dims = 1:20)
+gliomas.integrated <- FindClusters(gliomas.integrated, resolution = 0.5)
+DimPlot(gliomas.integrated, group.by = 'seurat_clusters', reduction = 'umap')
+```
+
+
+```{r}
+gliomas.integrated$orig.ident %>% head()
+FeaturePlot(gliomas.integrated, c('GFAP', 'APOE','MBP', 'PLP1', 'PDGFRA', 'CSPG4'))
+```
