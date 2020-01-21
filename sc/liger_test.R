@@ -15,5 +15,15 @@ row.names(h3k27m_glioma) <- h3k27m_glioma$Gene
 h3k27m_glioma <- select(h3k27m_glioma, -Gene)
 dim(h3k27m_glioma) 
 
+## preprocessing data
 liger <- createLiger(list(idh=idh_oligo, h3k27=h3k27m_glioma))
-liger
+liger <- normalize(liger)
+liger <- selectGenes(liger, var.thresh = 0.1)
+liger <- scaleNotCenter(liger)
+
+## running liger
+liger <- optimizeALS(liger, k = 20) 
+liger <- quantileAlignSNF(liger) #SNF clustering and quantile alignment
+
+## saving results
+saveRDS(liger, 'data/liger_results.RDS')
