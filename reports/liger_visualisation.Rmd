@@ -1,25 +1,25 @@
 ---
 title: "Liger visualisation"
 author: "Health Data Science Unit"
-date: "{r date()}"
+date: "`r date()`"
 output: html_document
 ---
 
         
-## Cell lines
+## Cell lines alignment using LIGER
 
-```{r}
+```{r include=FALSE}
 library(ggplot2)
 library(dplyr)
+library(gridExtra)
 
 knitr::opts_chunk$set(warning = FALSE, 
                       message = FALSE,
-                      cache = TRUE, 
+                      cache = FALSE, 
                       fig.width = 10,
                       fig.height = 7)
 
 liger_list <- readRDS('../data/cell_lines_liger_results.RDS')
-class(liger_list$tsne)
 
 liger.df <- as.data.frame(liger_list$tsne)
 barcodes <- gsub('.atac', '', rownames(liger.df))
@@ -29,22 +29,123 @@ dataset <- sapply(rownames(liger.df),
 
 liger.df <- mutate(liger.df, 
                    barcodes=barcodes,
-                   dataset=dataset)
+                   dataset=dataset,
+                   clusters=liger_list$clusters)
 
 annotations <- read.table('../data/cell_lines_metadata.tsv', header = TRUE) 
 liger.df <- mutate(liger.df, Ident=rep(annotations$Ident, 2))
+liger.df <- rename(liger.df, tSNE1=V1, tSNE2=V2)
 ```
 
-```{r cell_lines_plot, fig.width=10, fig.height=7}
-ggplot(liger.df, aes(V1, V2, colour=Ident)) + geom_point(alpha=0.3) + theme_light()
+
+## LIGER clusters
+
+```{r clusters_plot, echo=FALSE}
+ggplot(liger.df, aes(tSNE1, tSNE2, colour=clusters)) + geom_point(alpha=0.3) + theme_light()
 ```
 
-```{r cell_datasets}
-ggplot(liger.df, aes(V1, V2, colour=dataset)) + geom_point(alpha=0.3) + theme_light()
+
+## Cell lines annotations
+
+```{r cell_lines_plot, echo=FALSE}
+ggplot(liger.df, aes(tSNE1, tSNE2, colour=Ident)) + geom_point(alpha=0.3) + theme_light()
 ```
 
-```{r paired_plot}
-ggplot(liger.df, aes(V1, V2, colour=dataset)) + 
+## Grouping by datasets
+
+```{r cell_datasets, echo=FALSE}
+ggplot(liger.df, aes(tSNE1, tSNE2, colour=dataset)) + geom_point(alpha=0.3) + theme_light()
+```
+
+## Distance between RNA & ATAC single cell data pairs
+
+```{r paired_plot, echo=FALSE}
+con <- ggplot(liger.df, aes(tSNE1, tSNE2, colour=dataset)) + 
         geom_point(alpha=0.3) + 
         geom_line(group=barcodes, alpha =0.1) + theme_light()
 ```
+
+```{r closeness_distribution, echo=FALSE}
+distance <- function(x, y) {
+        d <- sqrt(sum((x - y)^2))
+        return(d)
+}
+
+h_view_spec_norm <- liger_list$H_norm
+## slide the rna data (first half of the dataset)
+rna_h <- h_view_spec_norm[!grepl('.atac', rownames(h_view_spec_norm)), ]
+## slide the atac data (first half of the dataset)
+atac_h <- h_view_spec_norm[grepl('.atac', rownames(h_view_spec_norm)), ]
+
+## minimal distance between closest neighbor in a different dataset
+min_dist_diff_clust <- numeric(nrow(h_view_spec_norm))
+for (i in 1:length(min_dist_diff_clust)){
+        cell <- h_view_spec_norm[i, ]
+        if ( dataset[i] == 'rna') {
+                distances <-  numeric(length = nrow(atac_h))
+                for (j in 1:nrow(atac_h)) {
+                        distances <- distance(cell, atac_h[j,])
+                }
+                min_dist_diff_clust[i] <- min(distances)
+        } else {
+                distances <-  numeric(length = nrow(rna_h))
+                for (j in 1:nrow(rna_h)) {
+                        distances <- distance(cell, rna_h[j,])
+                }
+                min_dist_diff_clust[i] <- min(distances)
+        }
+}
+
+## minimal distance between closest neighbor of the same dataset
+min_dist_same_clust <- numeric(nrow(h_view_spec_norm))
+for (i in 1:length(min_dist_same_clust)){
+        cell <- h_view_spec_norm[i, ]
+        if ( dataset[i] == 'rna') {
+                distances <-  numeric(length = nrow(rna_h))
+                for (j in 1:nrow(rna_h)) {
+                        distances <- distance(cell, rna_h[j,])
+                }
+                ## remove distance to itself
+                indx <- which(rownames(h_view_spec_norm)[i] == rownames(rna_h))
+                distances <- distances[-indx]
+                min_dist_same_clust[i] <- min(distances)
+        } else {
+                distances <-  numeric(length = nrow(atac_h))
+                for (j in 1:nrow(atac_h)) {
+                        distances <- distance(cell, atac_h[j,])
+                }
+                indx <- which(rownames(h_view_spec_norm)[i] == rownames(atac_h))
+                distances <- distances[-indx]
+                min_dist_same_clust[i] <- min(distances)
+        }
+}
+min_dist_same_clust <- min_dist_same_clust[!is.infinite(min_dist_same_clust)]
+
+## find distances between pairs
+pairs <- lapply(barcodes, function(x) which(x == barcodes))
+pair_dist <- numeric(length = length(pairs))
+for (i in 1:length(pairs)){
+        pair_dist[i] <- distance(h_view_spec_norm[pairs[[i]][1], ], 
+                                 h_view_spec_norm[pairs[[i]][2], ])
+}
+pair_dist <- pair_dist[1:1047]
+
+diff_clust <- data.frame(distance = min_dist_diff_clust,
+                         type = rep('diff_dataset_dist', length(min_dist_diff_clust)))
+same_clust <- data.frame(distance = min_dist_same_clust,
+                         type = rep('same_dataset_dist', length(min_dist_same_clust)))
+pairs_dist <- data.frame(distance = pair_dist, 
+                         type = rep('pairs_dist', length(pair_dist)))
+dists <- rbind(diff_clust, same_clust, pairs_dist)
+```
+
+```{r echo=FALSE, fig.height=4.5}
+mu <- plyr::ddply(dists, "type", summarise, grp.mean=mean(distance, inf.rm = TRUE))
+h <- ggplot(dists, aes(x = distance, fill = type)) + 
+        geom_histogram(alpha = 0.5) +
+        geom_vline(data=mu, aes(xintercept=grp.mean, color=type),
+             linetype="dashed") +
+        theme_light()
+grid.arrange(con, h, nrow = 1)
+```
+
