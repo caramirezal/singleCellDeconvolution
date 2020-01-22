@@ -1,0 +1,50 @@
+---
+title: "Liger visualisation"
+author: "Health Data Science Unit"
+date: "{r date()}"
+output: html_document
+---
+
+        
+## Cell lines
+
+```{r}
+library(ggplot2)
+library(dplyr)
+
+knitr::opts_chunk$set(warning = FALSE, 
+                      message = FALSE,
+                      cache = TRUE, 
+                      fig.width = 10,
+                      fig.height = 7)
+
+liger_list <- readRDS('../data/cell_lines_liger_results.RDS')
+class(liger_list$tsne)
+
+liger.df <- as.data.frame(liger_list$tsne)
+barcodes <- gsub('.atac', '', rownames(liger.df))
+dataset <- sapply(rownames(liger.df), 
+                  function(x) ifelse(grepl('.atac', x), 'atac', 'rna')
+                  )
+
+liger.df <- mutate(liger.df, 
+                   barcodes=barcodes,
+                   dataset=dataset)
+
+annotations <- read.table('../data/cell_lines_metadata.tsv', header = TRUE) 
+liger.df <- mutate(liger.df, Ident=rep(annotations$Ident, 2))
+```
+
+```{r cell_lines_plot, fig.width=10, fig.height=7}
+ggplot(liger.df, aes(V1, V2, colour=Ident)) + geom_point(alpha=0.3) + theme_light()
+```
+
+```{r cell_datasets}
+ggplot(liger.df, aes(V1, V2, colour=dataset)) + geom_point(alpha=0.3) + theme_light()
+```
+
+```{r paired_plot}
+ggplot(liger.df, aes(V1, V2, colour=dataset)) + 
+        geom_point(alpha=0.3) + 
+        geom_line(group=barcodes, alpha =0.1) + theme_light()
+```
