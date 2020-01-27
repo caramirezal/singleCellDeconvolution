@@ -15,6 +15,7 @@ library(ggplot2)
 source("http://bioconductor.org/biocLite.R")
 biocLite("GEOquery")
 library(GEOquery)
+library(Seurat)
 
 knitr::opts_chunk$set(warning = FALSE,
                       message = FALSE,
@@ -22,7 +23,6 @@ knitr::opts_chunk$set(warning = FALSE,
                       fig.width = 10,
                       fig.height = 7, 
                       echo = FALSE)
-theme_set(theme_light())
 ```
 
 ## Hepatitis virus data
@@ -63,10 +63,10 @@ rna_umap.df <- merge(rna_umap.df, metadata.s)
 rna_umap.df <- mutate(rna_umap.df, origin= gsub('[0-9]', '', SourceName))
 rna_umap.df <- mutate(rna_umap.df, origin= trimws(origin))
 ggplot(data = rna_umap.df) +
-        geom_point(aes(UMAP1, UMAP2, colour=origin))
+        geom_point(aes(UMAP1, UMAP2, colour=origin, size=4))
 ```
 
-```{r rosemberg_data}
+```{r rosemberg_data, eval=FALSE}
 url_rosenmberg <- 'https://www.ncbi.nlm.nih.gov/geo/download/?acc=GSE119117&format=file&file=GSE119117%5Fcounts%5Fmatrix%2Etxt%2Egz'
 if ( !file.exists('../data/hcv/rosemberg2018/rosemberg.gz')) {
        download.file(url = url_rosenmberg, 
@@ -84,11 +84,87 @@ sm <- data.frame(geo_acc=series_matrix$geo_accession, sample=series_matrix$`time
 sm <- mutate(sm, id=gsub('-', '.', id))
 ```
 
-```{r}
+```{r eval=FALSE}
 bulk_umap <- umap(t(bulk), metric = 'cosine')
 bulk_umap.df <- as.data.frame(bulk_umap)
 bulk_umap.df <- mutate(bulk_umap.df, id=colnames(bulk))
 bulk_umap.df <- merge(bulk_umap.df, sm)
 ```
+
+```{r eval=FALSE}
+## Downloading Satpathy AT et al, 2019 data
+barcodes_url <- 'https://www.ncbi.nlm.nih.gov/geo/download/?acc=GSE129785&format=file&file=GSE129785%5FscATAC%2DTME%2DTCells%2Ecell%5Fbarcodes%2Etxt%2Egz'
+matrix_url <- 'https://www.ncbi.nlm.nih.gov/geo/download/?acc=GSE129785&format=file&file=GSE129785%5FscATAC%2DTME%2DTCells%2Emtx%2Egz'
+peaks_url <- 'https://www.ncbi.nlm.nih.gov/geo/download/?acc=GSE129785&format=file&file=GSE129785%5FscATAC%2DTME%2DTCells%2Epeaks%2Etxt%2Egz'
+
+## dowloading data
+if ( ! file.exists('../data/hcv/satpathy2016/barcodes.tsv')) {
+      download.file(barcodes_url, destfile = '../data/hcv/satpathy2016/barcodes.tsv.gz')
+      gunzip('../data/hcv/satpathy2016/barcodes.tsv.gz', 
+             destname = '../data/hcv/satpathy2016/barcodes.tsv',
+             remove = FALSE)  
+}
+if ( ! file.exists('../data/hcv/satpathy2016/matrix.mtx')){
+        download.file(matrix_url, destfile = '../data/hcv/satpathy2016/matrix.mtx.gz')
+        gunzip('../data/hcv/satpathy2016/matrix.mtx.gz', 
+               destname = '../data/hcv/satpathy2016/matrix.mtx', 
+               remove = FALSE)  
+}
+if ( ! file.exists('../data/hcv/satpathy2016/genes.tsv')){
+        download.file(peaks_url, destfile = '../data/hcv/satpathy2016/genes.tsv.gz')
+        gunzip('../data/hcv/satpathy2016/genes.tsv.gz', 
+               destname = '../data/hcv/satpathy2016/genes.tsv',
+               remove = FALSE) 
+}
+
+
+## loading data
+barcodes <- read.table('../data/hcv/satpathy2016/barcodes.tsv', 
+                       header = TRUE) %>% select(Barcodes) 
+barcodes <- as.vector(barcodes$Barcodes)
+
+
+#counts <- Read10X('../data/hcv/satpathy2016/', gene.column = 1)
+counts <- readMM('../data/hcv/satpathy2016/matrix.mtx')
+counts.s <- counts[, samps]
+peaks <- read.table('../data/hcv/satpathy2016/genes.tsv', header = TRUE)
+
+## subsampling
+samps <- sample(1:length(barcodes), 1000)
+barcodes.s <- barcodes[samps]
+counts.s@Dimnames <- list(peaks, barcodes.s)
+atac.seu <- CreateSeuratObject(counts = counts.s, project = 'atac')
+```
+
+```{r rna_processing}
+rna.seu <- CreateSeuratObject(counts = rna, project = 'rna')
+
+rna.seu <- NormalizeData(rna.seu, verbose = FALSE)
+rna.seu <- FindVariableFeatures(rna.seu, selection.method = 'vst', nfeatures = 5000)
+rna.seu <- ScaleData(rna.seu, verbose = FALSE)
+rna.seu <- RunPCA(rna.seu, npcs = 30, verbose = FALSE)
+rna.seu <- RunUMAP(rna.seu, reduction = "pca", dims = 1:30)
+rna.seu <- FindNeighbors(rna.seu, dims = 1:30, verbose = FALSE)
+rna.seu <- FindClusters(rna.seu, resolution= 0.5, verbose = FALSE)
+```
+
+
+```{r atac_processing}
+atac.seu <- NormalizeData(atac.seu, verbose = FALSE)
+atac.seu <- FindVariableFeatures(atac.seu, selection.method = 'vst', nfeatures = 10000)
+
+activity.matrix <- CreateGeneActivityMatrix(
+        peak.matrix = GetAssayData(atac.seu, slot='counts'), 
+                annotation.file = "../data/Homo_sapiens.GRCh38.98.gtf.gz", 
+        seq.levels = c(1:22, "X", "Y"), 
+        upstream = 2000, 
+        verbose = TRUE
+)
+#saveRDS(activity.matrix, '../data/hcv/activity_matrix_sathpathy2019.RDS')
+```
+
+
+
+
 
 
